@@ -43,13 +43,9 @@ export async function fetchOpenInterest(symbol) {
     const res = await fetch(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=5m&limit=10`);
     if (!res.ok) throw new Error('Failed to fetch open interest');
     return await res.json();
-  // Open interest endpoint (futures): https://fapi.binance.com/futures/data/openInterestHist
-  try {
-    const res = await fetch(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=5m&limit=10`);
-    if (!res.ok) throw new Error('Failed to fetch open interest');
-    return await res.json();
   } catch (err) {
     console.error('Binance Open Interest Error:', err);
     return null;
   }
 }
+
