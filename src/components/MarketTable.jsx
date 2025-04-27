@@ -180,24 +180,42 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
     </div>
   );
 
+  // Format the last updated time
+  const lastUpdatedTime = new Date().toLocaleTimeString();
+  const lastUpdatedDate = new Date().toLocaleDateString();
+  
   return (
     <div>
       {signalFilterUI}
       {signalSettingsUI}
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+      <table style={{ 
+        width: '100%', 
+        borderCollapse: 'collapse', 
+        fontSize: 14,
+        borderSpacing: 0,
+        border: '1px solid #2a2d3e'
+      }}>
         <thead>
-          <tr>
-            <th style={{ display: 'flex', alignItems: 'center' }}>
+          <tr style={{ background: '#1a1c25' }}>
+            <th style={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              padding: '10px 12px',
+              borderBottom: '1px solid #2a2d3e',
+              borderRight: '1px solid #2a2d3e'
+            }}>
               Coin
               {settingsButton}
             </th>
-            <th>Price</th>
-            <th>24h %</th>
-            <th>Volume %</th>
-            <th>Funding</th>
-            <th>OI</th>
+            <th style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>Price</th>
+            <th style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>24h %</th>
+            <th style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>Volume %</th>
+            <th style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>Funding</th>
+            <th style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>OI</th>
             {activeSignals.map(sig => (
-              <th key={sig}>{signalModes.find(m => m.value === sig)?.label || sig}</th>
+              <th key={sig} style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>
+                {signalModes.find(m => m.value === sig)?.label || sig}
+              </th>
             ))}
           </tr>
         </thead>
@@ -209,30 +227,65 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
               <React.Fragment key={coin.id}>
                 <tr
                   onClick={() => setExpandedId(isExpanded ? null : coin.id)}
-                  style={{ cursor: 'pointer', background: isExpanded ? '#23263a' : undefined }}
+                  style={{ 
+                    cursor: 'pointer', 
+                    background: isExpanded ? '#23263a' : i % 2 === 0 ? '#1c1e2a' : '#20222e',
+                  }}
                 >
-                  <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <td style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 8, 
+                    padding: '8px 12px',
+                    borderBottom: '1px solid #2a2d3e',
+                    borderRight: '1px solid #2a2d3e'
+                  }}>
                     <img src={coin.image} alt={coin.name} style={{ width: 20, height: 20, borderRadius: 10 }} />
                     {coin.name}
                   </td>
-                  <td>{formatUSD(coin.current_price)}</td>
-                  <td style={{ color: coin.price_change_percentage_24h >= 0 ? '#00e1b4' : '#ff3860' }}>
+                  <td style={{ 
+                    padding: '8px 12px',
+                    borderBottom: '1px solid #2a2d3e',
+                    borderRight: '1px solid #2a2d3e'
+                  }}>{formatUSD(coin.current_price)}</td>
+                  <td style={{ 
+                    color: coin.price_change_percentage_24h >= 0 ? '#00e1b4' : '#ff3860',
+                    padding: '8px 12px',
+                    borderBottom: '1px solid #2a2d3e',
+                    borderRight: '1px solid #2a2d3e'
+                  }}>
                     {formatPct(coin.price_change_percentage_24h)}
                   </td>
-                  <td style={{ color: volChange > 0 ? '#00e1b4' : '#ff3860' }}>{volChange !== null ? formatPct(volChange, 2) : '-'}</td>
-                  <td>{funding !== undefined ? formatPct(Number(funding) * 100, 4) : '-'}</td>
-                  <td>{oi !== undefined && oi !== null ? formatNumber(Number(oi), 0) : '-'}</td>
+                  <td style={{ 
+                    color: volChange > 0 ? '#00e1b4' : '#ff3860',
+                    padding: '8px 12px',
+                    borderBottom: '1px solid #2a2d3e',
+                    borderRight: '1px solid #2a2d3e'
+                  }}>{volChange !== null ? formatPct(volChange, 2) : '-'}</td>
+                  <td style={{ 
+                    padding: '8px 12px',
+                    borderBottom: '1px solid #2a2d3e',
+                    borderRight: '1px solid #2a2d3e'
+                  }}>{funding !== undefined ? formatPct(Number(funding) * 100, 4) : '-'}</td>
+                  <td style={{ 
+                    padding: '8px 12px',
+                    borderBottom: '1px solid #2a2d3e',
+                    borderRight: '1px solid #2a2d3e'
+                  }}>{oi !== undefined && oi !== null ? formatNumber(Number(oi), 0) : '-'}</td>
                   {activeSignals.map(sig => {
                     const sigObj = signals[sig];
                     return (
-                      <td key={sig} style={{ padding: 0 }}>
+                      <td key={sig} style={{ 
+                        padding: 0,
+                        borderBottom: '1px solid #2a2d3e',
+                        borderRight: '1px solid #2a2d3e'
+                      }}>
                         {sigObj && sigObj.signal ? (
                           <div style={{
                             width: '100%',
                             height: 36,
                             background: '#1c1e2a',
                             borderLeft: `4px solid ${sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860'}`,
-                            borderRadius: 4,
                             display: 'flex',
                             alignItems: 'center',
                             padding: '0 10px',
@@ -263,7 +316,11 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                               <span style={{
                                 fontSize: 13,
                                 fontWeight: 600,
-                                color: sigObj.pctChange > 0 ? '#00e1b4' : '#ff3860',
+                                // For Buy signals: green if positive, red if negative
+                                // For Sell signals: green if negative (successful), red if positive (failed)
+                                color: (sigObj.signal === 'Buy' && sigObj.pctChange > 0) || 
+                                       (sigObj.signal === 'Sell' && sigObj.pctChange < 0) ? 
+                                       '#00e1b4' : '#ff3860',
                                 marginRight: 8,
                               }}>
                                 {(sigObj.pctChange > 0 ? '+' : '') + sigObj.pctChange.toFixed(2) + '%'}
@@ -281,7 +338,13 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                             )}
                           </div>
                         ) : (
-                          <span style={{ color: '#888', fontWeight: 400, fontSize: 14 }}>-</span>
+                          <span style={{ 
+                            color: '#888', 
+                            fontWeight: 400, 
+                            fontSize: 14,
+                            display: 'block',
+                            padding: '8px 12px'
+                          }}>-</span>
                         )}
                       </td>
                     );
@@ -289,7 +352,12 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                 </tr>
                 {isExpanded && (
                   <tr>
-                    <td colSpan={8 + activeSignals.length} style={{ background: '#23263a', padding: 0 }}>
+                    <td colSpan={8 + activeSignals.length} style={{ 
+                      background: '#23263a', 
+                      padding: 0,
+                      borderBottom: '1px solid #2a2d3e',
+                      borderRight: '1px solid #2a2d3e'
+                    }}>
                       <MiniChart klines={klines} signals={{ ...signals, activeSignals }} />
                     </td>
                   </tr>
@@ -299,6 +367,19 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
           })}
         </tbody>
       </table>
+      
+      {/* Last updated timestamp */}
+      <div style={{ 
+        marginTop: 16, 
+        fontSize: 12, 
+        color: '#aaa', 
+        display: 'flex',
+        justifyContent: 'space-between',
+        padding: '0 4px'
+      }}>
+        <span>Last updated: {lastUpdatedTime} on {lastUpdatedDate}</span>
+        <span>Interval: {interval}</span>
+      </div>
     </div>
   );
 }
