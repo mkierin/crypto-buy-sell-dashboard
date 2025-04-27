@@ -1,0 +1,14 @@
+body {
+  margin: 0;
+  background: #181a20;
+  color: #eee;
+  font-family: 'Inter', sans-serif;
+}
+
+h1, h2 {
+  color: #00e1b4;
+}
+
+pre {
+  border-radius: 6px;
+}
