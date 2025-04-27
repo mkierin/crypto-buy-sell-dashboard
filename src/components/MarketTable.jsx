@@ -4,17 +4,6 @@ import { getWavetrendSignal, formatSignalAgo } from '../utils/wavetrend';
 import { formatUSD, formatPct, formatNumber } from '../utils/format';
 import MiniChart from './MiniChart.jsx';
 
-// Helper to format numbers as currency
-function formatUSD(num) {
-  if (typeof num !== 'number') return '-';
-  return '$' + num.toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-
-// Helper to format percentages
-function formatPct(num) {
-  if (typeof num !== 'number') return '-';
-  return num.toFixed(2) + '%';
-}
 
 
 export default function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
