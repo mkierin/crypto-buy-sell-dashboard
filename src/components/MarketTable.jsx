@@ -5,18 +5,36 @@ import { formatUSD, formatPct, formatNumber } from '../utils/format';
 import { getSignals } from '../utils/signals';
 import MiniChart from './MiniChart.jsx';
 
-
-
 export default function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
   const [expandedId, setExpandedId] = useState(null);
   const [sortKey, setSortKey] = useState('market_cap_rank');
   const [sortDir, setSortDir] = useState('asc');
   const [signalFilter, setSignalFilter] = useState({ buy: true, sell: true });
   const [signalSort, setSignalSort] = useState('time'); // 'time' or 'signal'
-  const [signalMode, setSignalMode] = useState('wavetrend');
-  const [showWavetrend, setShowWavetrend] = useState(true);
-  const [showRSI, setShowRSI] = useState(false);
-  const [showEMA, setShowEMA] = useState(false);
+  const [activeSignals, setActiveSignals] = useState(['wavetrend']);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Signal mode descriptions
+  const signalModeDescriptions = {
+    wavetrend: 'Wavetrend: Buy/Sell when Wavetrend oscillator crosses WT2 in extreme zones (-60/+60). Good for reversals.',
+    rsi: 'RSI: Buy/Sell when RSI crosses above 30 or below 70. Classic momentum strategy.',
+    ema: 'EMA: Buy/Sell when price crosses above/below EMA21. Trend following.',
+    confluence: 'Confluence: WT and RSI must agree on signal direction.',
+    wt_ema: 'WT+EMA: Wavetrend signal confirmed by EMA trend. Reduces false signals by requiring trend agreement.',
+    rsi_ema: 'RSI+EMA: RSI signal confirmed by EMA trend.',
+    wt_rsi: 'WT+RSI: Both Wavetrend and RSI agree within 3 candles.',
+    cluster: 'Cluster: At least two of WT, RSI, EMA agree on Buy/Sell.'
+  };
+  const signalModes = [
+    { value: 'wavetrend', label: 'Wavetrend' },
+    { value: 'rsi', label: 'RSI' },
+    { value: 'ema', label: 'EMA' },
+    { value: 'confluence', label: 'Confluence (WT+RSI)' },
+    { value: 'wt_ema', label: 'WT + EMA' },
+    { value: 'rsi_ema', label: 'RSI + EMA' },
+    { value: 'wt_rsi', label: 'WT + RSI' },
+    { value: 'cluster', label: 'Cluster (2 of 3)' }
+  ];
   if (!Array.isArray(data) || data.length === 0) return <div>No data</div>;
   const now = new Date();
 
@@ -34,12 +52,14 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
     const klines = klinesMap?.[coin.id] || [];
     const signals = getSignals(klines);
     const { wavetrend, rsi, ema } = signals;
-    const mainSignal = signalMode === 'confluence'
-      ? (wavetrend.signal === rsi.signal && wavetrend.signal ? wavetrend.signal : null)
-      : signals[signalMode]?.signal;
-    const mainTriggeredAt = signalMode === 'confluence'
-      ? (wavetrend.signal === rsi.signal && wavetrend.signal ? wavetrend.triggeredAt : null)
-      : signals[signalMode]?.triggeredAt;
+    let mainSignal, mainTriggeredAt;
+    if (activeSignals[0] === 'confluence') {
+      mainSignal = wavetrend.signal === rsi.signal && wavetrend.signal ? wavetrend.signal : null;
+      mainTriggeredAt = wavetrend.signal === rsi.signal && wavetrend.signal ? wavetrend.triggeredAt : null;
+    } else {
+      mainSignal = signals[activeSignals[0]]?.signal;
+      mainTriggeredAt = signals[activeSignals[0]]?.triggeredAt;
+    }
     const ago = mainTriggeredAt ? formatSignalAgo(mainTriggeredAt, now, interval) : '';
     const funding = fundingMap?.[coin.id]?.lastFundingRate;
     const oiArr = oiMap?.[coin.id] || [];
@@ -62,8 +82,8 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
   let filteredRows = rows;
   if (!signalFilter.buy || !signalFilter.sell) {
     filteredRows = rows.filter(r => {
-      if (signalFilter.buy && r.signal === 'Buy') return true;
-      if (signalFilter.sell && r.signal === 'Sell') return true;
+      if (signalFilter.buy && r.mainSignal === 'Buy') return true;
+      if (signalFilter.sell && r.mainSignal === 'Sell') return true;
       return false;
     });
   }
@@ -72,51 +92,80 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
   const sortFns = {
     market_cap_rank: r => r.coin.market_cap_rank,
     name: r => r.coin.name.toLowerCase(),
-    symbol: r => r.coin.symbol.toUpperCase(),
-    current_price: r => r.coin.current_price,
-    market_cap: r => r.coin.market_cap,
-    price_change_percentage_24h: r => r.coin.price_change_percentage_24h,
-    total_volume: r => r.coin.total_volume,
-    volChange: r => r.volChange ?? -Infinity,
-    funding: r => r.funding !== undefined ? Number(r.funding) : -Infinity,
-    oi: r => r.oi !== undefined && r.oi !== null ? Number(r.oi) : -Infinity,
-    signal: r => r.signal || '',
-    signal_time: r => r.triggeredAt ? r.triggeredAt.getTime() : 0,
+    price: r => r.coin.current_price,
+    change_24h: r => r.coin.price_change_percentage_24h,
+    volume: r => r.volChange,
+    funding: r => r.funding || 0,
+    oi: r => r.oi || 0,
+    signal: r => {
+      if (signalSort === 'time') {
+        return r.mainTriggeredAt ? -r.mainTriggeredAt.getTime() : 0;
+      } else {
+        return r.mainSignal === 'Buy' ? 1 : r.mainSignal === 'Sell' ? -1 : 0;
+      }
+    }
   };
-  let sortedRows = [...filteredRows];
-  if (sortKey === 'signal') {
-    // Special: sort by signal (Buy first, Sell second) or by signal time
-    if (signalFilter.buy && !signalFilter.sell) {
-      sortedRows = sortedRows.filter(r => r.signal === 'Buy');
-    } else if (!signalFilter.buy && signalFilter.sell) {
-      sortedRows = sortedRows.filter(r => r.signal === 'Sell');
-    }
-    if (signalSort === 'signal') {
-      sortedRows.sort((a, b) => {
-        // Buy first, then Sell, then none
-        const order = { Buy: 0, Sell: 1, '': 2 };
-        return (order[a.signal] - order[b.signal]) * (sortDir === 'asc' ? 1 : -1);
-      });
-    } else {
-      sortedRows.sort((a, b) => ((b.triggeredAt?.getTime() || 0) - (a.triggeredAt?.getTime() || 0)) * (sortDir === 'asc' ? -1 : 1));
-    }
-  } else if (sortFns[sortKey]) {
-    sortedRows.sort((a, b) => {
-      const vA = sortFns[sortKey](a);
-      const vB = sortFns[sortKey](b);
-      if (vA === vB) return 0;
-      return (vA > vB ? 1 : -1) * (sortDir === 'asc' ? 1 : -1);
-    });
-  }
+
+  // Apply sorting
+  const sortFn = sortFns[sortKey] || sortFns.market_cap_rank;
+  const sortedRows = [...filteredRows].sort((a, b) => {
+    const aVal = sortFn(a);
+    const bVal = sortFn(b);
+    if (aVal === bVal) return 0;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return aVal > bVal ? dir : -dir;
+  });
 
   function handleSort(key) {
-    if (sortKey === key) {
+    if (key === sortKey) {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
     } else {
       setSortKey(key);
       setSortDir('asc');
     }
   }
+
+  // Sort indicator
+  function sortIcon(key) {
+    if (sortKey !== key) return null;
+    return sortDir === 'asc' ? ' ▲' : ' ▼';
+  }
+
+  // Signal settings button
+  const settingsButton = (
+    <button onClick={(e) => { e.stopPropagation(); setSettingsOpen(true); }} style={{ background: 'none', border: 'none', color: '#aaa', marginLeft: 'auto', cursor: 'pointer', fontSize: 18 }}>⚙️</button>
+  );
+
+  // Signal settings modal
+  const signalSettingsUI = (
+    settingsOpen && (
+      <div style={{
+        position: 'fixed', left: 0, top: 0, width: '100vw', height: '100vh', zIndex: 1000,
+        background: 'rgba(10,12,24,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center'
+      }} onClick={() => setSettingsOpen(false)}>
+        <div style={{
+          background: '#23263a', color: '#eee', borderRadius: 14, minWidth: 320, maxWidth: 400, padding: 32,
+          boxShadow: '0 6px 32px #000b', border: '1.5px solid #444', position: 'relative', fontSize: 16
+        }} onClick={e => e.stopPropagation()}>
+          <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 12, letterSpacing: 0.5 }}>Signal Settings</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {signalModes.map(opt => (
+              <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', borderRadius: 8, padding: '6px 10px', background: activeSignals.includes(opt.value) ? '#00e1b41a' : 'transparent', fontWeight: activeSignals.includes(opt.value) ? 700 : 500 }}>
+                <input type="checkbox" name="signalMode" value={opt.value} checked={activeSignals.includes(opt.value)} onChange={e => {
+                  setActiveSignals(prev => e.target.checked ? [...prev, opt.value] : prev.filter(v => v !== opt.value));
+                }} style={{ accentColor: '#00e1b4', marginRight: 6 }} />
+                <span>{opt.label}</span>
+              </label>
+            ))}
+          </div>
+          <div style={{ marginTop: 18, fontSize: 14, color: '#aaa', fontStyle: 'italic' }}>
+            {activeSignals.length === 1 ? signalModeDescriptions[activeSignals[0]] : 'Select one or more signals to show columns.'}
+          </div>
+          <button onClick={() => setSettingsOpen(false)} style={{ position: 'absolute', top: 10, right: 16, background: 'none', border: 'none', color: '#eee', fontSize: 22, cursor: 'pointer' }}>&times;</button>
+        </div>
+      </div>
+    )
+  );
 
   // Signal column filter UI
   const signalFilterUI = (
@@ -128,62 +177,28 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
       <label style={{ color: '#ff3860' }}>
         <input type="checkbox" checked={signalFilter.sell} onChange={e => setSignalFilter(f => ({ ...f, sell: e.target.checked }))} /> Sell
       </label>
-      <span style={{ color: '#eee', marginLeft: 12 }}>Sort by:</span>
-      <select value={signalSort} onChange={e => setSignalSort(e.target.value)} style={{ background: '#23263a', color: '#eee', border: 'none', borderRadius: 4 }}>
-        <option value="time">Time</option>
-        <option value="signal">Signal Type</option>
-      </select>
-    </div>
-  );
-
-  function sortIcon(key) {
-    if (sortKey !== key) return <span style={{ color: '#444', marginLeft: 4 }}>↕</span>;
-    return sortDir === 'asc' ? <span style={{ color: '#00e1b4', marginLeft: 4 }}>▲</span> : <span style={{ color: '#ff3860', marginLeft: 4 }}>▼</span>;
-  }
-
-  // --- Signal mode and column toggles UI ---
-  const signalModeUI = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-      <span style={{ color: '#eee' }}>Signal Mode:</span>
-      <select value={signalMode} onChange={e => setSignalMode(e.target.value)} style={{ background: '#23263a', color: '#eee', border: 'none', borderRadius: 4 }}>
-        <option value="wavetrend">Wavetrend</option>
-        <option value="rsi">RSI</option>
-        <option value="ema">EMA</option>
-        <option value="confluence">Confluence</option>
-      </select>
-      <label style={{ color: '#00e1b4' }}>
-        <input type="checkbox" checked={showWavetrend} onChange={e => setShowWavetrend(e.target.checked)} /> WT
-      </label>
-      <label style={{ color: '#f3c900' }}>
-        <input type="checkbox" checked={showRSI} onChange={e => setShowRSI(e.target.checked)} /> RSI
-      </label>
-      <label style={{ color: '#e91e63' }}>
-        <input type="checkbox" checked={showEMA} onChange={e => setShowEMA(e.target.checked)} /> EMA
-      </label>
     </div>
   );
 
   return (
-    <div className="market-table-container">
-      {signalModeUI}
+    <div>
       {signalFilterUI}
-      <table className="market-table">
+      {signalSettingsUI}
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
         <thead>
           <tr>
-            <th style={{ cursor: 'pointer' }} onClick={() => handleSort('market_cap_rank')}># {sortIcon('market_cap_rank')}</th>
-            <th style={{ cursor: 'pointer' }} onClick={() => handleSort('name')}>Name {sortIcon('name')}</th>
-            <th style={{ cursor: 'pointer' }} onClick={() => handleSort('symbol')}>Symbol {sortIcon('symbol')}</th>
-            <th style={{ cursor: 'pointer' }} onClick={() => handleSort('current_price')}>Price {sortIcon('current_price')}</th>
-            <th style={{ cursor: 'pointer' }} onClick={() => handleSort('market_cap')}>Market Cap {sortIcon('market_cap')}</th>
-            <th style={{ cursor: 'pointer' }} onClick={() => handleSort('price_change_percentage_24h')}>24h % {sortIcon('price_change_percentage_24h')}</th>
-            <th style={{ cursor: 'pointer' }} onClick={() => handleSort('total_volume')}>Volume {sortIcon('total_volume')}</th>
-            <th style={{ cursor: 'pointer' }} onClick={() => handleSort('volChange')}>Vol Δ% {sortIcon('volChange')}</th>
-            <th style={{ cursor: 'pointer' }} onClick={() => handleSort('funding')}>Funding {sortIcon('funding')}</th>
-            <th style={{ cursor: 'pointer' }} onClick={() => handleSort('oi')}>OI {sortIcon('oi')}</th>
-            {showWavetrend && <th>WT Signal</th>}
-            {showRSI && <th>RSI Signal</th>}
-            {showEMA && <th>EMA Signal</th>}
-            <th style={{ cursor: 'pointer' }} onClick={() => { setSortKey('signal'); setSortDir('desc'); }}>Signal {sortIcon('signal')}</th>
+            <th style={{ display: 'flex', alignItems: 'center' }}>
+              Coin
+              {settingsButton}
+            </th>
+            <th>Price</th>
+            <th>24h %</th>
+            <th>Volume %</th>
+            <th>Funding</th>
+            <th>OI</th>
+            {activeSignals.map(sig => (
+              <th key={sig}>{signalModes.find(m => m.value === sig)?.label || sig}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -196,44 +211,86 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                   onClick={() => setExpandedId(isExpanded ? null : coin.id)}
                   style={{ cursor: 'pointer', background: isExpanded ? '#23263a' : undefined }}
                 >
-                  <td>{coin.market_cap_rank}</td>
                   <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <img src={coin.image} alt={coin.name} style={{ width: 20, height: 20, borderRadius: 10 }} />
                     {coin.name}
                   </td>
-                  <td>{coin.symbol.toUpperCase()}</td>
                   <td>{formatUSD(coin.current_price)}</td>
-                  <td>{formatUSD(coin.market_cap)}</td>
                   <td style={{ color: coin.price_change_percentage_24h >= 0 ? '#00e1b4' : '#ff3860' }}>
                     {formatPct(coin.price_change_percentage_24h)}
                   </td>
-                  <td>{formatUSD(coin.total_volume)}</td>
                   <td style={{ color: volChange > 0 ? '#00e1b4' : '#ff3860' }}>{volChange !== null ? formatPct(volChange, 2) : '-'}</td>
                   <td>{funding !== undefined ? formatPct(Number(funding) * 100, 4) : '-'}</td>
                   <td>{oi !== undefined && oi !== null ? formatNumber(Number(oi), 0) : '-'}</td>
-                  {showWavetrend && <td>{signals.wavetrend.signal ? `${signals.wavetrend.signal} ${signals.wavetrend.triggeredAt ? formatSignalAgo(signals.wavetrend.triggeredAt, now, interval) : ''}` : '-'}</td>}
-                  {showRSI && <td>{signals.rsi.signal ? `${signals.rsi.signal} ${signals.rsi.triggeredAt ? formatSignalAgo(signals.rsi.triggeredAt, now, interval) : ''}` : '-'}</td>}
-                  {showEMA && <td>{signals.ema.signal ? `${signals.ema.signal} ${signals.ema.triggeredAt ? formatSignalAgo(signals.ema.triggeredAt, now, interval) : ''}` : '-'}</td>}
-                  <td>
-                    {mainSignal ? (
-                      <span style={{
-                        background: mainSignal === 'Buy' ? '#00e1b4' : '#ff3860',
-                        color: '#181a20',
-                        padding: '2px 8px',
-                        borderRadius: 6,
-                        fontWeight: 600
-                      }}>
-                        {mainSignal} {ago && <span style={{ fontWeight: 400, color: '#eee', marginLeft: 4 }}>{ago}</span>}
-                      </span>
-                    ) : (
-                      '-'
-                    )}
-                  </td>
+                  {activeSignals.map(sig => {
+                    const sigObj = signals[sig];
+                    return (
+                      <td key={sig} style={{ padding: 0 }}>
+                        {sigObj && sigObj.signal ? (
+                          <div style={{
+                            width: '100%',
+                            height: 36,
+                            background: '#1c1e2a',
+                            borderLeft: `4px solid ${sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860'}`,
+                            borderRadius: 4,
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '0 10px',
+                            position: 'relative',
+                            overflow: 'hidden',
+                          }}>
+                            {/* Subtle gradient overlay */}
+                            <div style={{
+                              position: 'absolute',
+                              left: 0,
+                              top: 0,
+                              bottom: 0,
+                              width: '30%',
+                              background: `linear-gradient(90deg, ${sigObj.signal === 'Buy' ? 'rgba(0,225,180,0.12)' : 'rgba(255,56,96,0.12)'} 0%, transparent 100%)`,
+                              pointerEvents: 'none',
+                            }} />
+                            
+                            <span style={{ 
+                              fontSize: 14, 
+                              fontWeight: 700, 
+                              color: sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860',
+                              marginRight: 'auto',
+                            }}>
+                              {sigObj.signal}
+                            </span>
+                            
+                            {sigObj.pctChange !== null && (
+                              <span style={{
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: sigObj.pctChange > 0 ? '#00e1b4' : '#ff3860',
+                                marginRight: 8,
+                              }}>
+                                {(sigObj.pctChange > 0 ? '+' : '') + sigObj.pctChange.toFixed(2) + '%'}
+                              </span>
+                            )}
+                            
+                            {sigObj.triggeredAt && (
+                              <span style={{ 
+                                fontSize: 12, 
+                                color: '#aaa', 
+                                fontWeight: 400,
+                              }}>
+                                {formatSignalAgo(sigObj.triggeredAt, now, interval)}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: '#888', fontWeight: 400, fontSize: 14 }}>-</span>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
                 {isExpanded && (
                   <tr>
-                    <td colSpan={11 + (showWavetrend ? 1 : 0) + (showRSI ? 1 : 0) + (showEMA ? 1 : 0) + 1} style={{ background: '#23263a', padding: 0 }}>
-                      <MiniChart klines={klines} signals={signals} signal={mainSignal} triggeredAt={mainTriggeredAt} />
+                    <td colSpan={8 + activeSignals.length} style={{ background: '#23263a', padding: 0 }}>
+                      <MiniChart klines={klines} signals={{ ...signals, activeSignals }} />
                     </td>
                   </tr>
                 )}
@@ -249,5 +306,7 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
 MarketTable.propTypes = {
   data: PropTypes.array,
   klinesMap: PropTypes.object,
-  interval: PropTypes.string
+  interval: PropTypes.string,
+  fundingMap: PropTypes.object,
+  oiMap: PropTypes.object
 };

@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 
 // Simple line chart using SVG for price history
 // Optionally marks the buy/sell signal
-export default function MiniChart({ klines, signals, signal, triggeredAt }) {
+export default function MiniChart({ klines, signals }) {
   if (!Array.isArray(klines) || klines.length === 0) return <div style={{ padding: 16 }}>No chart data</div>;
   // Extract close prices
   const closes = klines.map(k => Number(k[4]));
@@ -21,21 +21,65 @@ export default function MiniChart({ klines, signals, signal, triggeredAt }) {
   // Find signal indices for each type
   let indices = {};
   if (signals && typeof signals === 'object') {
-    for (const key of ['wavetrend','rsi','ema']) {
+    for (const key of ['wavetrend','rsi','ema','wt_ema','rsi_ema','wt_rsi','cluster','confluence']) {
       const s = signals[key];
       if (s && s.triggeredAt) {
         indices[key] = klines.findIndex(k => Math.abs(new Date(k[0]) - s.triggeredAt) < 60 * 1000);
       }
     }
   }
-  // Backwards compatibility for single signal
-  let signalIdx = null;
-  if (triggeredAt) {
-    signalIdx = klines.findIndex(k => {
-      const t = new Date(k[0]);
-      return Math.abs(t - triggeredAt) < 60 * 1000;
+
+  // Draw dotted lines and price labels for all active signals
+  let priceLines = [], priceLabels = [];
+  if (signals && Array.isArray(signals.activeSignals) && signals.activeSignals.length > 0) {
+    signals.activeSignals.forEach(sigKey => {
+      const idx = indices[sigKey];
+      const sigObj = signals[sigKey];
+      if (idx != null && idx >= 0 && sigObj && sigObj.signal && points[idx]) {
+        const [x, y] = points[idx];
+        const labelX = x < w / 2 ? x + 60 : x - 60;
+        const labelY = Math.max(pad + 18, Math.min(y, h - pad - 18));
+        priceLines.push(
+          <line
+            key={sigKey + '-line'}
+            x1={x}
+            y1={y}
+            x2={labelX}
+            y2={labelY}
+            stroke={sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860'}
+            strokeWidth={2}
+            strokeDasharray="6,5"
+          />
+        );
+        priceLabels.push(
+          <g key={sigKey + '-label'}>
+            <rect
+              x={labelX - 33}
+              y={labelY - 17}
+              width={66}
+              height={28}
+              rx={8}
+              fill={sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860'}
+              opacity={0.13}
+            />
+            <text
+              x={labelX}
+              y={labelY}
+              fontSize="18"
+              fill={sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860'}
+              fontWeight="bold"
+              textAnchor="middle"
+              alignmentBaseline="middle"
+              style={{ paintOrder: 'stroke fill', stroke: '#181a20', strokeWidth: 2 }}
+            >
+              {closes[idx]?.toFixed(2)}
+            </text>
+          </g>
+        );
+      }
     });
   }
+
   return (
     <svg width={w} height={h} style={{ background: '#181a20', borderRadius: 12, margin: 8, boxShadow: '0 2px 24px #000b' }}>
       {/* Grid lines */}
@@ -115,24 +159,11 @@ export default function MiniChart({ klines, signals, signal, triggeredAt }) {
           style={{ filter: 'drop-shadow(0 0 8px #e91e63)' }}
         />
       )}
-      {/* Fallback for old API */}
-      {signal && signalIdx != null && signalIdx >= 0 && (
-        <circle
-          cx={points[signalIdx][0]}
-          cy={points[signalIdx][1]}
-          r={10}
-          fill={signal === 'Buy' ? '#00e1b4' : '#ff3860'}
-          stroke="#fff"
-          strokeWidth="3"
-          style={{ filter: 'drop-shadow(0 0 8px #fff8)' }}
-        />
-      )}
     </svg>
   );
 }
 
 MiniChart.propTypes = {
   klines: PropTypes.array,
-  signal: PropTypes.string,
-  triggeredAt: PropTypes.instanceOf(Date)
+  signals: PropTypes.object
 };
