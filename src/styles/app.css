@@ -12,3 +12,36 @@ h1, h2 {
 pre {
   border-radius: 6px;
 }
+
+.market-table-container {
+  margin-top: 24px;
+  overflow-x: auto;
+}
+
+.market-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #21232b;
+  color: #eee;
+  font-size: 15px;
+  margin-bottom: 24px;
+}
+.market-table th, .market-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #333;
+  text-align: left;
+}
+.market-table th {
+  background: #181a20;
+  color: #00e1b4;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.market-table tr:hover {
+  background: #2a2d3a;
+}
+.market-table img {
+  vertical-align: middle;
+}

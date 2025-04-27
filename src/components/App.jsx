@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { fetchMarketData } from '../api/coingecko';
-import { fetchTicker } from '../api/binance';
+import { fetchKlines } from '../api/binance';
+import MarketTable from './MarketTable.jsx';
+import IntervalDropdown from './IntervalDropdown.jsx';
 import '../styles/app.css';
 
 export default function App() {
   const [cgData, setCgData] = useState(null);
-  const [ticker, setTicker] = useState(null);
+  const [klinesMap, setKlinesMap] = useState({}); // { symbol: klines[] }
+  const [interval, setInterval] = useState('1h');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -14,13 +17,22 @@ export default function App() {
       // Fetch CoinGecko market data for top 20 coins
       const cg = await fetchMarketData();
       setCgData(cg);
-      // Example: Fetch Binance ticker for BTCUSDT
-      const binanceTicker = await fetchTicker('BTCUSDT');
-      setTicker(binanceTicker);
+      // Fetch klines for each coin (Binance symbol = UPPERCASE+USDT)
+      const klinesObj = {};
+      if (cg && Array.isArray(cg)) {
+        await Promise.all(
+          cg.map(async coin => {
+            const symbol = (coin.symbol + 'usdt').toUpperCase();
+            const klines = await fetchKlines(symbol, interval, 50);
+            klinesObj[coin.id] = klines;
+          })
+        );
+      }
+      setKlinesMap(klinesObj);
       setLoading(false);
     }
     getData();
-  }, []);
+  }, [interval]);
 
   return (
     <div style={{ padding: 24, fontFamily: 'sans-serif' }}>
@@ -28,14 +40,9 @@ export default function App() {
       {loading && <div>Loading...</div>}
       {!loading && (
         <>
+          <IntervalDropdown value={interval} onChange={setInterval} />
           <h2>CoinGecko Top 20</h2>
-          <pre style={{ maxHeight: 200, overflow: 'auto', background: '#222', color: '#fff', padding: 8 }}>
-            {JSON.stringify(cgData, null, 2)}
-          </pre>
-          <h2>Binance BTCUSDT Ticker</h2>
-          <pre style={{ background: '#222', color: '#fff', padding: 8 }}>
-            {JSON.stringify(ticker, null, 2)}
-          </pre>
+          <MarketTable data={cgData} klinesMap={klinesMap} interval={interval} />
         </>
       )}
     </div>
