@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { getWavetrendSignal, formatSignalAgo } from '../utils/wavetrend';
+import { formatUSD, formatPct, formatNumber } from '../utils/format';
 import MiniChart from './MiniChart.jsx';
 
 // Helper to format numbers as currency
@@ -16,10 +17,19 @@ function formatPct(num) {
 }
 
 
-export default function MarketTable({ data, klinesMap, interval }) {
+export default function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
   const [expandedId, setExpandedId] = useState(null);
   if (!Array.isArray(data) || data.length === 0) return <div>No data</div>;
   const now = new Date();
+
+  // Helper: Calculate volume change % from klines
+  function getVolumeChange(klines) {
+    if (!klines || klines.length < 2) return null;
+    const prev = Number(klines[klines.length - 2]?.[5]);
+    const curr = Number(klines[klines.length - 1]?.[5]);
+    if (!prev || !curr) return null;
+    return ((curr - prev) / prev) * 100;
+  }
 
   return (
     <div className="market-table-container">
@@ -33,6 +43,9 @@ export default function MarketTable({ data, klinesMap, interval }) {
             <th>Market Cap</th>
             <th>24h %</th>
             <th>Volume</th>
+            <th>Vol Δ%</th>
+            <th>Funding</th>
+            <th>OI</th>
             <th>Signal</th>
           </tr>
         </thead>
@@ -41,6 +54,11 @@ export default function MarketTable({ data, klinesMap, interval }) {
             const klines = klinesMap?.[coin.id] || [];
             const { signal, triggeredAt } = getWavetrendSignal(klines, interval);
             const ago = triggeredAt ? formatSignalAgo(triggeredAt, now, interval) : '';
+            const funding = fundingMap?.[coin.id]?.lastFundingRate;
+            // OI: show most recent value
+            const oiArr = oiMap?.[coin.id] || [];
+            const oi = oiArr.length > 0 ? oiArr[oiArr.length - 1]?.sumOpenInterest : null;
+            const volChange = getVolumeChange(klines);
             const isExpanded = expandedId === coin.id;
             return (
               <React.Fragment key={coin.id}>
@@ -60,6 +78,9 @@ export default function MarketTable({ data, klinesMap, interval }) {
                     {formatPct(coin.price_change_percentage_24h)}
                   </td>
                   <td>{formatUSD(coin.total_volume)}</td>
+                  <td style={{ color: volChange > 0 ? '#00e1b4' : '#ff3860' }}>{volChange !== null ? formatPct(volChange, 2) : '-'}</td>
+                  <td>{funding !== undefined ? formatPct(Number(funding) * 100, 4) : '-'}</td>
+                  <td>{oi !== undefined && oi !== null ? formatNumber(Number(oi), 0) : '-'}</td>
                   <td>
                     {signal ? (
                       <span style={{
@@ -78,7 +99,7 @@ export default function MarketTable({ data, klinesMap, interval }) {
                 </tr>
                 {isExpanded && (
                   <tr>
-                    <td colSpan={8} style={{ background: '#23263a', padding: 0 }}>
+                    <td colSpan={11} style={{ background: '#23263a', padding: 0 }}>
                       <MiniChart klines={klines} signal={signal} triggeredAt={triggeredAt} />
                     </td>
                   </tr>
