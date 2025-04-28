@@ -350,25 +350,25 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                   <td style={{ 
                     display: 'flex', 
                     alignItems: 'center', 
-                    gap: 12, 
-                    padding: '16px 12px',
+                    gap: 10, 
+                    padding: '10px 12px',
                     borderBottom: '1px solid #1a1c25',
                     width: '200px'
                   }}>
-                    <div style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <img src={coin.image} alt={coin.name} style={{ width: 26, height: 26, borderRadius: 13 }} />
+                    <div style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <img src={coin.image} alt={coin.name} style={{ width: 22, height: 22, borderRadius: 11 }} />
                     </div>
-                    <span style={{ fontWeight: 500, fontSize: 16 }}>{coin.name}</span>
+                    <span style={{ fontWeight: 500, fontSize: 15 }}>{coin.name}</span>
                   </td>
                   <td style={{ 
-                    padding: '16px 12px',
+                    padding: '10px 12px',
                     borderBottom: '1px solid #1a1c25',
                     textAlign: 'center',
                     fontWeight: 500
                   }}>{formatUSD(coin.current_price)}</td>
                   <td style={{ 
                     color: coin.price_change_percentage_24h >= 0 ? '#00e1b4' : '#ff3860',
-                    padding: '16px 12px',
+                    padding: '10px 12px',
                     borderBottom: '1px solid #1a1c25',
                     textAlign: 'center',
                     fontWeight: 500
@@ -377,19 +377,19 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                   </td>
                   <td style={{ 
                     color: volChange > 0 ? '#00e1b4' : '#ff3860',
-                    padding: '16px 12px',
+                    padding: '10px 12px',
                     borderBottom: '1px solid #1a1c25',
                     textAlign: 'center',
                     fontWeight: 500
                   }}>{volChange !== null ? formatPct(volChange, 2) : '-'}</td>
                   <td style={{ 
-                    padding: '16px 12px',
+                    padding: '10px 12px',
                     borderBottom: '1px solid #1a1c25',
                     textAlign: 'center',
                     fontWeight: 500
                   }}>{funding !== undefined ? formatPct(Number(funding) * 100, 4) : '-'}</td>
                   <td style={{ 
-                    padding: '16px 12px',
+                    padding: '10px 12px',
                     borderBottom: '1px solid #1a1c25',
                     textAlign: 'center',
                     fontWeight: 500
@@ -404,13 +404,13 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                         {sigObj && sigObj.signal ? (
                           <div style={{
                             width: '100%',
-                            minHeight: 52,
+                            minHeight: 42,
                             background: '#13151f',
                             borderLeft: `4px solid ${sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860'}`,
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'center',
-                            padding: '8px 10px',
+                            padding: '6px 10px',
                             position: 'relative',
                             overflow: 'visible',
                           }}>
@@ -427,10 +427,10 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                             
                             {/* Signal type (Buy/Sell) */}
                             <div style={{ 
-                              fontSize: 14, 
+                              fontSize: 13, 
                               fontWeight: 700, 
                               color: sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860',
-                              marginBottom: 4,
+                              marginBottom: 3,
                               whiteSpace: 'nowrap',
                             }}>
                               {sigObj.signal}
@@ -445,7 +445,7 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                             }}>
                               {sigObj.pctChange !== null && (
                                 <span style={{
-                                  fontSize: 13,
+                                  fontSize: 12,
                                   fontWeight: 600,
                                   // For Buy signals: green if positive, red if negative
                                   // For Sell signals: green if negative (successful), red if positive (failed)
@@ -460,7 +460,7 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                               
                               {sigObj.triggeredAt && (
                                 <span style={{ 
-                                  fontSize: 12, 
+                                  fontSize: 11, 
                                   color: '#aaa', 
                                   fontWeight: 400,
                                   whiteSpace: 'nowrap',
@@ -475,9 +475,9 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                           <span style={{ 
                             color: '#888', 
                             fontWeight: 400, 
-                            fontSize: 16,
+                            fontSize: 14,
                             display: 'block',
-                            padding: '16px 12px'
+                            padding: '10px 12px'
                           }}>-</span>
                         )}
                       </td>
