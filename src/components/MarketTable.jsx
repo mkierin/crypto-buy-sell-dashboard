@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { formatSignalAgo } from '../utils/wavetrend';
 import { formatUSD, formatPct, formatNumber } from '../utils/format';
@@ -10,9 +10,20 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
   const [sortKey, setSortKey] = useState('market_cap_rank');
   const [sortDir, setSortDir] = useState('asc');
   const [signalFilter, setSignalFilter] = useState({ buy: true, sell: true });
-  const [signalSort, setSignalSort] = useState('time'); // 'time' or 'signal'
-  const [activeSignals, setActiveSignals] = useState(['wavetrend']);
+  const [signalSort, setSignalSort] = useState('time'); // 'time', 'pct', or 'signal'
+  
+  // Load saved active signals from localStorage or use default
+  const [activeSignals, setActiveSignals] = useState(() => {
+    const savedSignals = localStorage.getItem('cryptoDashboard_activeSignals');
+    return savedSignals ? JSON.parse(savedSignals) : ['wavetrend'];
+  });
+  
   const [settingsOpen, setSettingsOpen] = useState(false);
+  
+  // Save active signals to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('cryptoDashboard_activeSignals', JSON.stringify(activeSignals));
+  }, [activeSignals]);
 
   // Signal mode descriptions
   const signalModeDescriptions = {
@@ -96,15 +107,27 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
     change_24h: r => r.coin.price_change_percentage_24h,
     volume: r => r.volChange,
     funding: r => r.funding || 0,
-    oi: r => r.oi || 0,
-    signal: r => {
-      if (signalSort === 'time') {
-        return r.mainTriggeredAt ? -r.mainTriggeredAt.getTime() : 0;
-      } else {
-        return r.mainSignal === 'Buy' ? 1 : r.mainSignal === 'Sell' ? -1 : 0;
-      }
-    }
+    oi: r => r.oi || 0
   };
+  
+  // Add dynamic sort functions for each signal
+  activeSignals.forEach(sig => {
+    // Sort by signal type (Buy/Sell)
+    sortFns[`${sig}_signal`] = r => {
+      const signal = r.signals[sig]?.signal;
+      return signal === 'Buy' ? 1 : signal === 'Sell' ? -1 : 0;
+    };
+    
+    // Sort by percentage change
+    sortFns[`${sig}_pct`] = r => {
+      return r.signals[sig]?.pctChange || 0;
+    };
+    
+    // Sort by time since triggered
+    sortFns[`${sig}_time`] = r => {
+      return r.signals[sig]?.triggeredAt ? -r.signals[sig].triggeredAt.getTime() : 0;
+    };
+  });
 
   // Apply sorting
   const sortFn = sortFns[sortKey] || sortFns.market_cap_rank;
@@ -116,6 +139,7 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
     return aVal > bVal ? dir : -dir;
   });
 
+  // Handle sorting clicks
   function handleSort(key) {
     if (key === sortKey) {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -123,6 +147,12 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
       setSortKey(key);
       setSortDir('asc');
     }
+  }
+  
+  // Handle signal column sorting with multiple sort options
+  function handleSignalSort(sig, type) {
+    const key = `${sig}_${type}`;
+    handleSort(key);
   }
 
   // Sort indicator
@@ -193,28 +223,113 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
         borderCollapse: 'collapse', 
         fontSize: 14,
         borderSpacing: 0,
-        border: '1px solid #2a2d3e'
+        border: 'none',
+        tableLayout: 'fixed',
+        background: '#13151f'
       }}>
         <thead>
-          <tr style={{ background: '#1a1c25' }}>
-            <th style={{ 
-              display: 'flex', 
-              alignItems: 'center',
-              padding: '10px 12px',
-              borderBottom: '1px solid #2a2d3e',
-              borderRight: '1px solid #2a2d3e'
-            }}>
-              Coin
+          <tr style={{ background: '#171923' }}>
+            <th 
+              onClick={() => handleSort('name')}
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center',
+                padding: '10px 12px',
+                borderBottom: '1px solid #1a1c25',
+                borderRight: '1px solid #1a1c25',
+                cursor: 'pointer',
+                width: '200px',
+                fontWeight: 500,
+                color: '#eee'
+              }}
+            >
+              Coin {sortIcon('name')}
               {settingsButton}
             </th>
-            <th style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>Price</th>
-            <th style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>24h %</th>
-            <th style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>Volume %</th>
-            <th style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>Funding</th>
-            <th style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>OI</th>
+            <th 
+              onClick={() => handleSort('price')}
+              style={{ 
+                padding: '10px 12px', 
+                borderBottom: '1px solid #1a1c25',
+                cursor: 'pointer',
+                width: '100px',
+                fontWeight: 500,
+                color: '#eee',
+                textAlign: 'center'
+              }}
+            >
+              Price {sortIcon('price')}
+            </th>
+            <th 
+              onClick={() => handleSort('change_24h')}
+              style={{ 
+                padding: '10px 12px', 
+                borderBottom: '1px solid #1a1c25',
+                cursor: 'pointer',
+                width: '80px',
+                fontWeight: 500,
+                color: '#eee',
+                textAlign: 'center'
+              }}
+            >
+              24h % {sortIcon('change_24h')}
+            </th>
+            <th 
+              onClick={() => handleSort('volume')}
+              style={{ 
+                padding: '10px 12px', 
+                borderBottom: '1px solid #1a1c25',
+                cursor: 'pointer',
+                width: '80px',
+                fontWeight: 500,
+                color: '#eee',
+                textAlign: 'center'
+              }}
+            >
+              Volume % {sortIcon('volume')}
+            </th>
+            <th 
+              onClick={() => handleSort('funding')}
+              style={{ 
+                padding: '10px 12px', 
+                borderBottom: '1px solid #1a1c25',
+                cursor: 'pointer',
+                width: '80px',
+                fontWeight: 500,
+                color: '#eee',
+                textAlign: 'center'
+              }}
+            >
+              Funding {sortIcon('funding')}
+            </th>
+            <th 
+              onClick={() => handleSort('oi')}
+              style={{ 
+                padding: '10px 12px', 
+                borderBottom: '1px solid #1a1c25',
+                cursor: 'pointer',
+                width: '100px',
+                fontWeight: 500,
+                color: '#eee',
+                textAlign: 'center'
+              }}
+            >
+              OI {sortIcon('oi')}
+            </th>
             {activeSignals.map(sig => (
-              <th key={sig} style={{ padding: '10px 12px', borderBottom: '1px solid #2a2d3e', borderRight: '1px solid #2a2d3e' }}>
-                {signalModes.find(m => m.value === sig)?.label || sig}
+              <th 
+                key={sig}
+                onClick={() => handleSignalSort(sig, 'signal')}
+                style={{ 
+                  padding: '10px 12px', 
+                  borderBottom: '1px solid #1a1c25',
+                  cursor: 'pointer',
+                  fontWeight: 500,
+                  color: '#eee',
+                  textAlign: 'center'
+                }}
+              >
+                {signalModes.find(m => m.value === sig)?.label || sig} {sortKey.startsWith(sig) ? (sortDir === 'asc' ? '▲' : '▼') : ''}
               </th>
             ))}
           </tr>
@@ -235,62 +350,69 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                   <td style={{ 
                     display: 'flex', 
                     alignItems: 'center', 
-                    gap: 8, 
-                    padding: '8px 12px',
-                    borderBottom: '1px solid #2a2d3e',
-                    borderRight: '1px solid #2a2d3e'
+                    gap: 12, 
+                    padding: '16px 12px',
+                    borderBottom: '1px solid #1a1c25',
+                    width: '200px'
                   }}>
-                    <img src={coin.image} alt={coin.name} style={{ width: 20, height: 20, borderRadius: 10 }} />
-                    {coin.name}
+                    <div style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <img src={coin.image} alt={coin.name} style={{ width: 26, height: 26, borderRadius: 13 }} />
+                    </div>
+                    <span style={{ fontWeight: 500, fontSize: 16 }}>{coin.name}</span>
                   </td>
                   <td style={{ 
-                    padding: '8px 12px',
-                    borderBottom: '1px solid #2a2d3e',
-                    borderRight: '1px solid #2a2d3e'
+                    padding: '16px 12px',
+                    borderBottom: '1px solid #1a1c25',
+                    textAlign: 'center',
+                    fontWeight: 500
                   }}>{formatUSD(coin.current_price)}</td>
                   <td style={{ 
                     color: coin.price_change_percentage_24h >= 0 ? '#00e1b4' : '#ff3860',
-                    padding: '8px 12px',
-                    borderBottom: '1px solid #2a2d3e',
-                    borderRight: '1px solid #2a2d3e'
+                    padding: '16px 12px',
+                    borderBottom: '1px solid #1a1c25',
+                    textAlign: 'center',
+                    fontWeight: 500
                   }}>
                     {formatPct(coin.price_change_percentage_24h)}
                   </td>
                   <td style={{ 
                     color: volChange > 0 ? '#00e1b4' : '#ff3860',
-                    padding: '8px 12px',
-                    borderBottom: '1px solid #2a2d3e',
-                    borderRight: '1px solid #2a2d3e'
+                    padding: '16px 12px',
+                    borderBottom: '1px solid #1a1c25',
+                    textAlign: 'center',
+                    fontWeight: 500
                   }}>{volChange !== null ? formatPct(volChange, 2) : '-'}</td>
                   <td style={{ 
-                    padding: '8px 12px',
-                    borderBottom: '1px solid #2a2d3e',
-                    borderRight: '1px solid #2a2d3e'
+                    padding: '16px 12px',
+                    borderBottom: '1px solid #1a1c25',
+                    textAlign: 'center',
+                    fontWeight: 500
                   }}>{funding !== undefined ? formatPct(Number(funding) * 100, 4) : '-'}</td>
                   <td style={{ 
-                    padding: '8px 12px',
-                    borderBottom: '1px solid #2a2d3e',
-                    borderRight: '1px solid #2a2d3e'
+                    padding: '16px 12px',
+                    borderBottom: '1px solid #1a1c25',
+                    textAlign: 'center',
+                    fontWeight: 500
                   }}>{oi !== undefined && oi !== null ? formatNumber(Number(oi), 0) : '-'}</td>
                   {activeSignals.map(sig => {
                     const sigObj = signals[sig];
                     return (
                       <td key={sig} style={{ 
                         padding: 0,
-                        borderBottom: '1px solid #2a2d3e',
-                        borderRight: '1px solid #2a2d3e'
+                        borderBottom: '1px solid #1a1c25'
                       }}>
                         {sigObj && sigObj.signal ? (
                           <div style={{
                             width: '100%',
-                            height: 36,
-                            background: '#1c1e2a',
+                            minHeight: 52,
+                            background: '#13151f',
                             borderLeft: `4px solid ${sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860'}`,
                             display: 'flex',
-                            alignItems: 'center',
-                            padding: '0 10px',
+                            flexDirection: 'column',
+                            justifyContent: 'center',
+                            padding: '8px 10px',
                             position: 'relative',
-                            overflow: 'hidden',
+                            overflow: 'visible',
                           }}>
                             {/* Subtle gradient overlay */}
                             <div style={{
@@ -303,47 +425,59 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                               pointerEvents: 'none',
                             }} />
                             
-                            <span style={{ 
+                            {/* Signal type (Buy/Sell) */}
+                            <div style={{ 
                               fontSize: 14, 
                               fontWeight: 700, 
                               color: sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860',
-                              marginRight: 'auto',
+                              marginBottom: 4,
+                              whiteSpace: 'nowrap',
                             }}>
                               {sigObj.signal}
-                            </span>
+                            </div>
                             
-                            {sigObj.pctChange !== null && (
-                              <span style={{
-                                fontSize: 13,
-                                fontWeight: 600,
-                                // For Buy signals: green if positive, red if negative
-                                // For Sell signals: green if negative (successful), red if positive (failed)
-                                color: (sigObj.signal === 'Buy' && sigObj.pctChange > 0) || 
-                                       (sigObj.signal === 'Sell' && sigObj.pctChange < 0) ? 
-                                       '#00e1b4' : '#ff3860',
-                                marginRight: 8,
-                              }}>
-                                {(sigObj.pctChange > 0 ? '+' : '') + sigObj.pctChange.toFixed(2) + '%'}
-                              </span>
-                            )}
-                            
-                            {sigObj.triggeredAt && (
-                              <span style={{ 
-                                fontSize: 12, 
-                                color: '#aaa', 
-                                fontWeight: 400,
-                              }}>
-                                {formatSignalAgo(sigObj.triggeredAt, now, interval)}
-                              </span>
-                            )}
+                            {/* Percentage and time on same line */}
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              width: '100%',
+                            }}>
+                              {sigObj.pctChange !== null && (
+                                <span style={{
+                                  fontSize: 13,
+                                  fontWeight: 600,
+                                  // For Buy signals: green if positive, red if negative
+                                  // For Sell signals: green if negative (successful), red if positive (failed)
+                                  color: (sigObj.signal === 'Buy' && sigObj.pctChange > 0) || 
+                                         (sigObj.signal === 'Sell' && sigObj.pctChange < 0) ? 
+                                         '#00e1b4' : '#ff3860',
+                                  whiteSpace: 'nowrap',
+                                }}>
+                                  {(sigObj.pctChange > 0 ? '+' : '') + sigObj.pctChange.toFixed(2) + '%'}
+                                </span>
+                              )}
+                              
+                              {sigObj.triggeredAt && (
+                                <span style={{ 
+                                  fontSize: 12, 
+                                  color: '#aaa', 
+                                  fontWeight: 400,
+                                  whiteSpace: 'nowrap',
+                                  marginLeft: 8,
+                                }}>
+                                  {formatSignalAgo(sigObj.triggeredAt, now, interval)}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         ) : (
                           <span style={{ 
                             color: '#888', 
                             fontWeight: 400, 
-                            fontSize: 14,
+                            fontSize: 16,
                             display: 'block',
-                            padding: '8px 12px'
+                            padding: '16px 12px'
                           }}>-</span>
                         )}
                       </td>
@@ -353,10 +487,9 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                 {isExpanded && (
                   <tr>
                     <td colSpan={8 + activeSignals.length} style={{ 
-                      background: '#23263a', 
+                      background: '#1a1c25', 
                       padding: 0,
-                      borderBottom: '1px solid #2a2d3e',
-                      borderRight: '1px solid #2a2d3e'
+                      borderBottom: '1px solid #1a1c25'
                     }}>
                       <MiniChart klines={klines} signals={{ ...signals, activeSignals }} />
                     </td>
