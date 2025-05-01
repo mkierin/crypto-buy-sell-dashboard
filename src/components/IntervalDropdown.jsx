@@ -2,7 +2,6 @@ import React from 'react';
 import PropTypes from 'prop-types';
 
 const intervals = [
-  { label: '1m', value: '1m' },
   { label: '3m', value: '3m' },
   { label: '5m', value: '5m' },
   { label: '15m', value: '15m' },

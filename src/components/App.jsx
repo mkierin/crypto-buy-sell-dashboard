@@ -13,7 +13,10 @@ export default function App() {
   const [interval, setInterval] = useState('1h');
   const [loading, setLoading] = useState(true);
 
+  // --- Data polling ---
   useEffect(() => {
+    let timeout;
+    let cancelled = false;
     async function getData() {
       setLoading(true);
       // Fetch CoinGecko market data for top 20 coins
@@ -40,8 +43,20 @@ export default function App() {
       setFundingMap(fundingObj);
       setOiMap(oiObj);
       setLoading(false);
+      // --- Schedule next refresh ---
+      if (!cancelled) {
+        let ms;
+        if (interval === '3m') ms = 3 * 60 * 1000;
+        else if (interval === '5m') ms = 5 * 60 * 1000;
+        else ms = 5 * 60 * 1000;
+        timeout = setTimeout(getData, ms);
+      }
     }
     getData();
+    return () => {
+      cancelled = true;
+      if (timeout) clearTimeout(timeout);
+    };
   }, [interval]);
 
   return (
@@ -52,7 +67,23 @@ export default function App() {
         <>
           <IntervalDropdown value={interval} onChange={setInterval} />
           <h2>CoinGecko Top 20</h2>
-          <MarketTable data={cgData} klinesMap={klinesMap} interval={interval} fundingMap={fundingMap} oiMap={oiMap} />
+          <MarketTable
+            data={Array.isArray(cgData)
+              ? cgData.filter(coin => {
+                  const s = coin.symbol.toLowerCase();
+                  const n = coin.name.toLowerCase();
+                  return !(
+                    s.includes('usdt') || s.includes('usdc') || s.includes('dai') || s.includes('busd') ||
+                    s.includes('tusd') || s.includes('usd') || s.includes('weth') ||
+                    n.includes('tether') || n.includes('wrapped') || n.includes('staked ether') || n.includes('usd') || n.includes('weth')
+                  );
+                })
+              : cgData}
+            klinesMap={klinesMap}
+            interval={interval}
+            fundingMap={fundingMap}
+            oiMap={oiMap}
+          />
         </>
       )}
     </div>

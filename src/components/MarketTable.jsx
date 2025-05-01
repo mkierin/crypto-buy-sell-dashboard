@@ -76,6 +76,19 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
     const oiArr = oiMap?.[coin.id] || [];
     const oi = oiArr.length > 0 ? oiArr[oiArr.length - 1]?.sumOpenInterest : null;
     const volChange = getVolumeChange(klines);
+
+    // Volume spike detection for latest candle
+    let hasVolumeSpike = false, volSpikeValue = null;
+    if (klines.length > 20) {
+      const prev = klines.slice(-21, -1);
+      const avgVol = prev.reduce((a, k) => a + Number(k[5]), 0) / 20;
+      const vol = Number(klines[klines.length - 1][5]);
+      if (avgVol > 0 && vol > 2 * avgVol) {
+        hasVolumeSpike = true;
+        volSpikeValue = vol;
+      }
+    }
+
     return {
       coin,
       klines,
@@ -86,6 +99,8 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
       funding,
       oi,
       volChange,
+      hasVolumeSpike,
+      volSpikeValue,
     };
   });
 
@@ -199,14 +214,17 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
 
   // Signal column filter UI
   const signalFilterUI = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-      <span style={{ color: '#eee' }}>Signal:</span>
-      <label style={{ color: '#00e1b4' }}>
-        <input type="checkbox" checked={signalFilter.buy} onChange={e => setSignalFilter(f => ({ ...f, buy: e.target.checked }))} /> Buy
-      </label>
-      <label style={{ color: '#ff3860' }}>
-        <input type="checkbox" checked={signalFilter.sell} onChange={e => setSignalFilter(f => ({ ...f, sell: e.target.checked }))} /> Sell
-      </label>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ color: '#eee' }}>Signal:</span>
+        <label style={{ color: '#00e1b4' }}>
+          <input type="checkbox" checked={signalFilter.buy} onChange={e => setSignalFilter(f => ({ ...f, buy: e.target.checked }))} /> Buy
+        </label>
+        <label style={{ color: '#ff3860' }}>
+          <input type="checkbox" checked={signalFilter.sell} onChange={e => setSignalFilter(f => ({ ...f, sell: e.target.checked }))} /> Sell
+        </label>
+      </div>
+      <div>{settingsButton}</div>
     </div>
   );
 
@@ -244,7 +262,6 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
               }}
             >
               Coin {sortIcon('name')}
-              {settingsButton}
             </th>
             <th 
               onClick={() => handleSort('price')}
@@ -332,11 +349,23 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                 {signalModes.find(m => m.value === sig)?.label || sig} {sortKey.startsWith(sig) ? (sortDir === 'asc' ? '▲' : '▼') : ''}
               </th>
             ))}
+            <th 
+              style={{ 
+                padding: '10px 12px', 
+                borderBottom: '1px solid #1a1c25',
+                cursor: 'pointer',
+                fontWeight: 500,
+                color: '#b266ff',
+                textAlign: 'center'
+              }}
+            >
+              Vol Spike
+            </th>
           </tr>
         </thead>
         <tbody>
           {sortedRows.map((row, i) => {
-            const { coin, klines, signals, mainSignal, mainTriggeredAt, ago, funding, oi, volChange } = row;
+            const { coin, klines, signals, mainSignal, mainTriggeredAt, ago, funding, oi, volChange, hasVolumeSpike, volSpikeValue } = row;
             const isExpanded = expandedId === coin.id;
             return (
               <React.Fragment key={coin.id}>
@@ -394,95 +423,113 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
                     textAlign: 'center',
                     fontWeight: 500
                   }}>{oi !== undefined && oi !== null ? formatNumber(Number(oi), 0) : '-'}</td>
-                  {activeSignals.map(sig => {
-                    const sigObj = signals[sig];
-                    return (
-                      <td key={sig} style={{ 
-                        padding: 0,
-                        borderBottom: '1px solid #1a1c25'
-                      }}>
-                        {sigObj && sigObj.signal ? (
+                  {activeSignals.map(sig => (
+                    <td key={sig} style={{
+                      padding: 0,
+                      borderBottom: '1px solid #1a1c25',
+                      background: '#191b23',
+                      minWidth: 82,
+                      textAlign: 'center',
+                      fontWeight: 600,
+                      fontSize: 15
+                    }}>
+                      {signals[sig] && signals[sig].signal ? (
+                        <div style={{
+                          width: '100%',
+                          minHeight: 42,
+                          background: '#13151f',
+                          borderLeft: `4px solid ${signals[sig].signal === 'Buy' ? '#00e1b4' : '#ff3860'}`,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'center',
+                          padding: '6px 10px',
+                          position: 'relative',
+                          overflow: 'visible',
+                        }}>
+                          {/* Subtle gradient overlay */}
                           <div style={{
-                            width: '100%',
-                            minHeight: 42,
-                            background: '#13151f',
-                            borderLeft: `4px solid ${sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860'}`,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'center',
-                            padding: '6px 10px',
-                            position: 'relative',
-                            overflow: 'visible',
+                            position: 'absolute',
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            width: '30%',
+                            background: `linear-gradient(90deg, ${signals[sig].signal === 'Buy' ? 'rgba(0,225,180,0.12)' : 'rgba(255,56,96,0.12)'} 0%, transparent 100%)`,
+                            pointerEvents: 'none',
+                          }} />
+                          
+                          {/* Signal type (Buy/Sell) */}
+                          <div style={{ 
+                            fontSize: 13, 
+                            fontWeight: 700, 
+                            color: signals[sig].signal === 'Buy' ? '#00e1b4' : '#ff3860',
+                            marginBottom: 3,
+                            whiteSpace: 'nowrap',
                           }}>
-                            {/* Subtle gradient overlay */}
-                            <div style={{
-                              position: 'absolute',
-                              left: 0,
-                              top: 0,
-                              bottom: 0,
-                              width: '30%',
-                              background: `linear-gradient(90deg, ${sigObj.signal === 'Buy' ? 'rgba(0,225,180,0.12)' : 'rgba(255,56,96,0.12)'} 0%, transparent 100%)`,
-                              pointerEvents: 'none',
-                            }} />
-                            
-                            {/* Signal type (Buy/Sell) */}
-                            <div style={{ 
-                              fontSize: 13, 
-                              fontWeight: 700, 
-                              color: sigObj.signal === 'Buy' ? '#00e1b4' : '#ff3860',
-                              marginBottom: 3,
-                              whiteSpace: 'nowrap',
-                            }}>
-                              {sigObj.signal}
-                            </div>
-                            
-                            {/* Percentage and time on same line */}
-                            <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              width: '100%',
-                            }}>
-                              {sigObj.pctChange !== null && (
-                                <span style={{
-                                  fontSize: 12,
-                                  fontWeight: 600,
-                                  // For Buy signals: green if positive, red if negative
-                                  // For Sell signals: green if negative (successful), red if positive (failed)
-                                  color: (sigObj.signal === 'Buy' && sigObj.pctChange > 0) || 
-                                         (sigObj.signal === 'Sell' && sigObj.pctChange < 0) ? 
-                                         '#00e1b4' : '#ff3860',
-                                  whiteSpace: 'nowrap',
-                                }}>
-                                  {(sigObj.pctChange > 0 ? '+' : '') + sigObj.pctChange.toFixed(2) + '%'}
-                                </span>
-                              )}
-                              
-                              {sigObj.triggeredAt && (
-                                <span style={{ 
-                                  fontSize: 11, 
-                                  color: '#aaa', 
-                                  fontWeight: 400,
-                                  whiteSpace: 'nowrap',
-                                  marginLeft: 8,
-                                }}>
-                                  {formatSignalAgo(sigObj.triggeredAt, now, interval)}
-                                </span>
-                              )}
-                            </div>
+                            {signals[sig].signal}
                           </div>
-                        ) : (
-                          <span style={{ 
-                            color: '#888', 
-                            fontWeight: 400, 
-                            fontSize: 14,
-                            display: 'block',
-                            padding: '10px 12px'
-                          }}>-</span>
-                        )}
-                      </td>
-                    );
-                  })}
+                          {/* Percentage and time on same line */}
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            width: '100%',
+                          }}>
+                            {signals[sig].pctChange !== null && (
+                              <span style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: (signals[sig].signal === 'Buy' && signals[sig].pctChange > 0) ||
+                                       (signals[sig].signal === 'Sell' && signals[sig].pctChange < 0)
+                                ? '#00e1b4' : '#ff3860',
+                                whiteSpace: 'nowrap',
+                              }}>
+                                {(signals[sig].pctChange > 0 ? '+' : '') + signals[sig].pctChange.toFixed(2) + '%'}
+                              </span>
+                            )}
+                            {signals[sig].triggeredAt && (
+                              <span style={{
+                                fontSize: 11,
+                                color: '#aaa',
+                                fontWeight: 400,
+                                whiteSpace: 'nowrap',
+                                marginLeft: 8,
+                              }}>
+                                {formatSignalAgo(signals[sig].triggeredAt, now, interval)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{
+                          color: '#888',
+                          fontWeight: 400,
+                          fontSize: 14,
+                          display: 'block',
+                          padding: '10px 12px'
+                        }}>-</span>
+                      )}
+                    </td>
+                  ))}
+                  <td style={{
+                    background: '#191b23',
+                    border: 'none',
+                    minWidth: 64,
+                    textAlign: 'center',
+                    fontWeight: 700,
+                    fontSize: 16,
+                    color: hasVolumeSpike ? '#b266ff' : '#888',
+                    padding: 0
+                  }}>
+                    {hasVolumeSpike ? (
+                      <span title={volSpikeValue ? `Vol: ${volSpikeValue.toLocaleString()}` : ''}>
+                        <svg width="18" height="18" style={{ verticalAlign: 'middle', marginBottom: 2 }}>
+                          <rect x="4" y="4" width="10" height="10" fill="#b266ff" stroke="#fff" strokeWidth="2" transform="rotate(45 9 9)" />
+                        </svg>
+                      </span>
+                    ) : (
+                      <span style={{ color: '#888', fontSize: 15 }}>-</span>
+                    )}
+                  </td>
                 </tr>
                 {isExpanded && (
                   <tr>

@@ -1,6 +1,13 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 
+// Helper to format timestamp as HH:mm:ss (24h)
+function formatSignalTime(triggeredAt) {
+  if (!triggeredAt) return '';
+  const d = new Date(triggeredAt);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+}
+
 // Simple line chart using SVG for price history
 // Optionally marks the buy/sell signal
 export default function MiniChart({ klines, signals }) {
@@ -9,9 +16,20 @@ export default function MiniChart({ klines, signals }) {
   const closes = klines.map(k => Number(k[4]));
   const min = Math.min(...closes);
   const max = Math.max(...closes);
-  const w = 720, h = 320, pad = 40;
+  const w = 900, h = 320, pad = 48;
   // Bar width
   const barW = Math.max(2, ((w - 2 * pad) / klines.length) * 0.7);
+
+  // Volume spike detection: volume > 2x avg of previous 20
+  const volumeSpikes = [];
+  for (let i = 20; i < klines.length; ++i) {
+    const prev = klines.slice(i - 20, i);
+    const avgVol = prev.reduce((a, k) => a + Number(k[5]), 0) / 20;
+    const vol = Number(klines[i][5]);
+    if (avgVol > 0 && vol > 2 * avgVol) {
+      volumeSpikes.push(i);
+    }
+  }
   // Map closes to SVG points for line (optional, for signal)
   const points = closes.map((c, i) => {
     const x = pad + (i / (closes.length - 1)) * (w - 2 * pad);
@@ -125,40 +143,183 @@ export default function MiniChart({ klines, signals }) {
           </g>
         );
       })}
-      {/* Signal markers for each type */}
-      {signals && indices.wavetrend != null && indices.wavetrend >= 0 && signals.wavetrend.signal && (
-        <circle
-          cx={points[indices.wavetrend][0]}
-          cy={points[indices.wavetrend][1]}
-          r={11}
-          fill={signals.wavetrend.signal === 'Buy' ? '#00e1b4' : '#ff3860'}
-          stroke="#fff"
-          strokeWidth="3"
-          style={{ filter: 'drop-shadow(0 0 8px #00e1b4)' }}
-        />
-      )}
-      {signals && indices.rsi != null && indices.rsi >= 0 && signals.rsi.signal && (
-        <circle
-          cx={points[indices.rsi][0]}
-          cy={points[indices.rsi][1]}
-          r={9}
-          fill={signals.rsi.signal === 'Buy' ? '#f3c900' : '#b47c00'}
-          stroke="#fff"
-          strokeWidth="3"
-          style={{ filter: 'drop-shadow(0 0 8px #f3c900)' }}
-        />
-      )}
-      {signals && indices.ema != null && indices.ema >= 0 && signals.ema.signal && (
-        <circle
-          cx={points[indices.ema][0]}
-          cy={points[indices.ema][1]}
-          r={7}
-          fill={signals.ema.signal === 'Buy' ? '#e91e63' : '#7c1e3e'}
-          stroke="#fff"
-          strokeWidth="3"
-          style={{ filter: 'drop-shadow(0 0 8px #e91e63)' }}
-        />
-      )}
+      {/* Signal arrows for each active signal */}
+      {signals && Array.isArray(signals.activeSignals) && signals.activeSignals.length > 0 && signals.activeSignals.map(sigKey => {
+        const idx = indices[sigKey];
+        const sigObj = signals[sigKey];
+        if (idx != null && idx >= 0 && sigObj && sigObj.signal && points[idx]) {
+          const [x, y] = points[idx];
+          // Candle geometry
+          const k = klines[idx];
+          const high = +k[2], low = +k[3];
+          const yHigh = pad + ((max - high) / (max - min || 1)) * (h - 2 * pad);
+          const yLow = pad + ((max - low) / (max - min || 1)) * (h - 2 * pad);
+          if (sigObj.signal === 'Buy') {
+            // Green arrow up, below the candle
+            return (
+              <g key={sigKey + '-buy-group'}>
+                {/* Arrow */}
+                <polygon
+                  points={`
+                    ${x},${yLow + 12}
+                    ${x - 8},${yLow + 24}
+                    ${x + 8},${yLow + 24}
+                  `}
+                  fill="#00e1b4"
+                  stroke="#00e1b4"
+                  strokeWidth="2"
+                  style={{ filter: 'drop-shadow(0 0 4px #00e1b4)' }}
+                />
+                {/* Info box */}
+                <g>
+                  <rect
+                    x={x - 60}
+                    y={yLow + 28}
+                    width={120}
+                    height={34}
+                    rx={10}
+                    fill="#181a20"
+                    stroke="#00e1b4"
+                    strokeWidth={2}
+                    opacity={0.98}
+                  />
+                  <text
+                    x={x - 46}
+                    y={yLow + 50}
+                    fontSize="16"
+                    fill="#eee"
+                    fontWeight="bold"
+                    alignmentBaseline="middle"
+                  >
+                    ${closes[idx]?.toFixed(2)}
+                  </text>
+                  <text
+                    x={x + 28}
+                    y={yLow + 50}
+                    fontSize="14"
+                    fill="#aaa"
+                    fontWeight="400"
+                    alignmentBaseline="middle"
+                  >
+                    {formatSignalTime(sigObj.triggeredAt)}
+                  </text>
+                </g>
+              </g>
+            );
+          } else if (sigObj.signal === 'Sell') {
+            // Red arrow down, above the candle
+            return (
+              <g key={sigKey + '-sell-group'}>
+                {/* Arrow */}
+                <polygon
+                  points={`
+                    ${x},${yHigh - 12}
+                    ${x - 8},${yHigh - 24}
+                    ${x + 8},${yHigh - 24}
+                  `}
+                  fill="#ff3860"
+                  stroke="#ff3860"
+                  strokeWidth="2"
+                  style={{ filter: 'drop-shadow(0 0 4px #ff3860)' }}
+                />
+                {/* Info box */}
+                <g>
+                  <rect
+                    x={x - 60}
+                    y={yHigh - 62}
+                    width={120}
+                    height={34}
+                    rx={10}
+                    fill="#181a20"
+                    stroke="#ff3860"
+                    strokeWidth={2}
+                    opacity={0.98}
+                  />
+                  <text
+                    x={x - 46}
+                    y={yHigh - 40}
+                    fontSize="16"
+                    fill="#eee"
+                    fontWeight="bold"
+                    alignmentBaseline="middle"
+                  >
+                    ${closes[idx]?.toFixed(2)}
+                  </text>
+                  <text
+                    x={x + 28}
+                    y={yHigh - 40}
+                    fontSize="14"
+                    fill="#aaa"
+                    fontWeight="400"
+                    alignmentBaseline="middle"
+                  >
+                    {formatSignalTime(sigObj.triggeredAt)}
+                  </text>
+                </g>
+              </g>
+            );
+          }
+        }
+        return null;
+      })}
+      {/* Volume spike markers */}
+      {volumeSpikes.map(i => {
+        const [x, y] = points[i];
+        const k = klines[i];
+        const low = +k[3];
+        const yLow = pad + ((max - low) / (max - min || 1)) * (h - 2 * pad);
+        const vol = Number(k[5]);
+        return (
+          <g key={'volspike-' + i}>
+            {/* Purple diamond */}
+            <rect
+              x={x - 8}
+              y={yLow + 32}
+              width={16}
+              height={16}
+              fill="#b266ff"
+              stroke="#fff"
+              strokeWidth={2}
+              transform={`rotate(45 ${x} ${yLow + 40})`}
+              style={{ filter: 'drop-shadow(0 0 4px #b266ff)' }}
+            />
+            {/* Info box for volume spike */}
+            <g>
+              <rect
+                x={x - 60}
+                y={yLow + 52}
+                width={120}
+                height={32}
+                rx={10}
+                fill="#181a20"
+                stroke="#b266ff"
+                strokeWidth={2}
+                opacity={0.98}
+              />
+              <text
+                x={x - 46}
+                y={yLow + 72}
+                fontSize="15"
+                fill="#eee"
+                fontWeight="bold"
+                alignmentBaseline="middle"
+              >
+                Vol: {vol.toLocaleString()}
+              </text>
+              <text
+                x={x + 28}
+                y={yLow + 72}
+                fontSize="13"
+                fill="#aaa"
+                fontWeight="400"
+                alignmentBaseline="middle"
+              >
+                {formatSignalTime(+k[0])}
+              </text>
+            </g>
+          </g>
+        );
+      })}
     </svg>
   );
 }

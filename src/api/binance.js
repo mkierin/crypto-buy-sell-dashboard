@@ -17,10 +17,14 @@ export async function fetchTicker(symbol) {
 export async function fetchKlines(symbol, interval = '1m', limit = 100) {
   try {
     const res = await fetch(`${BASE_URL}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
-    if (!res.ok) throw new Error('Failed to fetch klines');
+    if (!res.ok) {
+      const errorBody = await res.text();
+      console.error(`Binance Klines Error ${res.status}: ${errorBody} for symbol ${symbol}`);
+      throw new Error(`Failed to fetch klines: ${res.status}`);
+    }
     return await res.json();
   } catch (err) {
-    console.error('Binance Klines Error:', err);
+    console.error('Binance Klines Error:', err.message || err);
     return null;
   }
 }
@@ -29,10 +33,14 @@ export async function fetchFunding(symbol) {
   // https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT
   try {
     const res = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`);
-    if (!res.ok) throw new Error('Failed to fetch funding');
+    if (!res.ok) {
+      const errorBody = await res.text();
+      console.error(`Binance Funding Error ${res.status}: ${errorBody} for symbol ${symbol}`);
+      throw new Error(`Failed to fetch funding: ${res.status}`);
+    }
     return await res.json();
   } catch (err) {
-    console.error('Binance Funding Error:', err);
+    console.error('Binance Funding Error:', err.message || err);
     return null;
   }
 }
@@ -48,4 +56,3 @@ export async function fetchOpenInterest(symbol) {
     return null;
   }
 }
-
