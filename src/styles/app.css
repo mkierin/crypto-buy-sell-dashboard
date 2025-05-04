@@ -5,6 +5,61 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+/* App Header and Navigation */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  border-bottom: 1px solid #333;
+  padding-bottom: 15px;
+}
+
+.main-nav ul {
+  display: flex;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  gap: 15px;
+}
+
+.main-nav button {
+  background: #21232b;
+  color: #eee;
+  border: 1px solid #333;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.main-nav button:hover {
+  background: #2a2d3a;
+}
+
+.main-nav button.active {
+  background: #00e1b4;
+  color: #181a20;
+  border-color: #00e1b4;
+  font-weight: bold;
+}
+
+.dashboard-page {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.loading-indicator {
+  text-align: center;
+  padding: 20px;
+  color: #999;
+}
+
 h1, h2 {
   color: #00e1b4;
 }
