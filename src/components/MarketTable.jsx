@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import PropTypes from 'prop-types';
 import { formatSignalAgo } from '../utils/wavetrend';
 import { formatUSD, formatPct, formatNumber } from '../utils/format';
 import { getSignals } from '../utils/signals';
 import MiniChart from './MiniChart.jsx';
 
-export default function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
+function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
   const [expandedId, setExpandedId] = useState(null);
   const [sortKey, setSortKey] = useState('market_cap_rank');
   const [sortDir, setSortDir] = useState('asc');
@@ -61,7 +61,7 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
   const rows = data.map((coin) => {
     const klines = klinesMap?.[coin.id] || [];
     const signals = getSignals(klines);
-    const { wavetrend, rsi } = signals;
+    // const { wavetrend, rsi } = signals; // Uncomment if needed later
     const funding = fundingMap?.[coin.id]?.lastFundingRate;
     const oiArr = oiMap?.[coin.id] || [];
     const oi = oiArr.length > 0 ? oiArr[oiArr.length - 1]?.sumOpenInterest : null;
@@ -560,3 +560,18 @@ MarketTable.propTypes = {
   fundingMap: PropTypes.object,
   oiMap: PropTypes.object
 };
+
+// Export with memo to prevent unnecessary rerenders
+export default memo(MarketTable, (prevProps, nextProps) => {
+  // Only rerender if the interval changes or if the data structure changes
+  const intervalChanged = prevProps.interval !== nextProps.interval;
+  const dataChanged = prevProps.data !== nextProps.data;
+  
+  // For klines, only check if the structure changed, not the content
+  // This prevents rerenders when only the values inside klines change
+  const klinesStructureChanged = 
+    Object.keys(prevProps.klinesMap || {}).length !== Object.keys(nextProps.klinesMap || {}).length;
+  
+  // Return true if props are equal (no rerender needed)
+  return !intervalChanged && !dataChanged && !klinesStructureChanged;
+});

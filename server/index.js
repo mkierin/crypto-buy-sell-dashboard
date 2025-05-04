@@ -3,6 +3,7 @@ const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const fetch = require('node-fetch');
 const path = require('path');
+const wavetrend = require('./signals/wavetrend');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -54,7 +55,9 @@ db.serialize(() => {
     type TEXT NOT NULL,
     price REAL NOT NULL,
     timestamp INTEGER NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    indicator TEXT,
+    strength TEXT
   )`);
   
   // Create indexes for faster lookups
@@ -253,70 +256,34 @@ app.get('/api/open-interest/:symbol', async (req, res) => {
 
 // --- Helper: detect buy/sell signals ---
 async function detectSignals(symbol, interval, klines) {
-  if (!klines || klines.length < 20) return; // Need enough data for signals
+  if (!klines || klines.length < 50) return; // Need enough data for signals
   
   const now = Date.now();
-  const signals = [];
   
-  // Simple example: detect crossovers of 7 and 25 period EMAs
-  // Calculate EMAs
-  const closePrices = klines.map(k => parseFloat(k[4])); // Close price is at index 4
-  const ema7 = calculateEMA(closePrices, 7);
-  const ema25 = calculateEMA(closePrices, 25);
+  // Use WaveTrend algorithm to detect signals
+  const wavetrendSignals = wavetrend.detectSignals(klines);
   
-  // Look for signals in more candles for testing purposes
-  for (let i = closePrices.length - 10; i < closePrices.length; i++) {
-    if (i <= 0 || i >= closePrices.length) continue;
-    
-    // Buy signal: EMA7 crosses above EMA25 or price increases by more than 1%
-    if (ema7[i-1] <= ema25[i-1] && ema7[i] > ema25[i] || 
-        (closePrices[i] > closePrices[i-1] * 1.01 && i % 2 === 0)) {
-      const timestamp = parseInt(klines[i][0]); // Open time at index 0
-      const price = parseFloat(klines[i][4]);   // Close price at index 4
-      signals.push({
-        symbol,
-        interval,
-        type: 'buy',
-        price,
-        timestamp
-      });
-    }
-    
-    // Sell signal: EMA7 crosses below EMA25 or price decreases by more than 1%
-    if (ema7[i-1] >= ema25[i-1] && ema7[i] < ema25[i] || 
-        (closePrices[i] < closePrices[i-1] * 0.99 && i % 3 === 0)) {
-      const timestamp = parseInt(klines[i][0]);
-      const price = parseFloat(klines[i][4]);
-      signals.push({
-        symbol,
-        interval,
-        type: 'sell',
-        price,
-        timestamp
-      });
-    }
-  }
-  
-  // For testing, add some sample signals if none were detected
-  if (signals.length === 0 && Math.random() > 0.5) {
-    const lastCandle = klines[klines.length - 1];
-    const timestamp = parseInt(lastCandle[0]);
-    const price = parseFloat(lastCandle[4]);
-    
-    signals.push({
-      symbol,
-      interval,
-      type: Math.random() > 0.5 ? 'buy' : 'sell',
-      price,
-      timestamp
-    });
-  }
+  // Add symbol and interval to each signal
+  const signals = wavetrendSignals.map(signal => ({
+    ...signal,
+    symbol,
+    interval
+  }));
   
   // Save signals to database
   if (signals.length > 0) {
-    const stmt = db.prepare('INSERT INTO signals (symbol, interval, type, price, timestamp, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+    const stmt = db.prepare('INSERT INTO signals (symbol, interval, type, price, timestamp, created_at, indicator, strength) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     signals.forEach(signal => {
-      stmt.run(signal.symbol, signal.interval, signal.type, signal.price, signal.timestamp, now);
+      stmt.run(
+        signal.symbol,
+        signal.interval,
+        signal.type,
+        signal.price,
+        signal.timestamp,
+        signal.created_at,
+        signal.indicator || 'unknown',
+        signal.strength || 'medium'
+      );
     });
     stmt.finalize();
     console.log(`[signals] Detected ${signals.length} signals for ${symbol} (${interval})`);

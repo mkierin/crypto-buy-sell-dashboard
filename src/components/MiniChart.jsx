@@ -11,6 +11,10 @@ function formatSignalTime(triggeredAt) {
 // Simple line chart using SVG for price history
 // Optionally marks the buy/sell signal
 export default function MiniChart({ klines, signals }) {
+  // Add console logs to debug signals
+  console.log('MiniChart signals:', signals);
+  console.log('MiniChart klines length:', klines?.length);
+  
   if (!Array.isArray(klines) || klines.length === 0) return <div style={{ padding: 16 }}>No chart data</div>;
   // Extract close prices
   const closes = klines.map(k => Number(k[4]));
@@ -36,22 +40,87 @@ export default function MiniChart({ klines, signals }) {
     const y = pad + ((max - c) / (max - min || 1)) * (h - 2 * pad);
     return [x, y];
   });
-  // Find signal indices for each type
-  let indices = {};
+  
+  // Format a timestamp for display on x-axis
+  const formatTimeLabel = (timestamp) => {
+    const date = new Date(Number(timestamp));
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+  
+  // Calculate safe boundaries for signal display
+  const leftBoundary = pad + 80; // 80px from left edge
+  const rightBoundary = w - pad - 80; // 80px from right edge
+  const topBoundary = pad + 80; // 80px from top edge
+  const bottomBoundary = h - pad - 80; // 80px from bottom edge
+  
+  // Function to ensure x-coordinate is within safe boundaries
+  const getSafeX = (x) => {
+    // If x is too close to the right edge, move it left
+    if (x > rightBoundary) return rightBoundary;
+    // If x is too close to the left edge, move it right
+    if (x < leftBoundary) return leftBoundary;
+    return x;
+  };
+  // Find all buy/sell signals and their indices
+  const buySignals = [];
+  const sellSignals = [];
+  
   if (signals && typeof signals === 'object') {
-    for (const key of ['wavetrend','rsi','ema','wt_ema','rsi_ema','wt_rsi','cluster','confluence']) {
+    console.log('Available signal keys:', Object.keys(signals));
+    
+    // Process all signal types
+    for (const key of ['wavetrend', 'rsi', 'ema', 'wt_ema', 'rsi_ema', 'wt_rsi', 'cluster', 'confluence']) {
       const s = signals[key];
-      if (s && s.triggeredAt) {
-        indices[key] = klines.findIndex(k => Math.abs(new Date(k[0]) - s.triggeredAt) < 60 * 1000);
+      if (s && s.signal && s.triggeredAt) {
+        console.log(`Found signal for ${key}:`, s.signal, s.triggeredAt);
+        
+        // Convert triggeredAt to Date if it's not already
+        const triggeredTime = s.triggeredAt instanceof Date ? s.triggeredAt : new Date(s.triggeredAt);
+        
+        // Find the closest kline to the signal time
+        const idx = klines.findIndex(k => {
+          const klineTime = new Date(Number(k[0]));
+          return Math.abs(klineTime - triggeredTime) < 60 * 1000;
+        });
+        
+        if (idx >= 0) {
+          const signalInfo = {
+            key,
+            idx,
+            signal: s.signal,
+            time: triggeredTime,
+            price: parseFloat(klines[idx][4]) // close price
+          };
+          
+          if (s.signal === 'Buy') {
+            buySignals.push(signalInfo);
+          } else if (s.signal === 'Sell') {
+            sellSignals.push(signalInfo);
+          }
+        }
       }
     }
   }
+  
+  console.log('Buy signals found:', buySignals.length);
+  console.log('Sell signals found:', sellSignals.length);
 
   // Draw dotted lines and price labels for all active signals
   let priceLines = [], priceLabels = [];
+  // Create a map of signal keys to indices for active signals
+  const signalIndices = {};
+  
+  // Populate the signalIndices map from our buySignals and sellSignals arrays
+  buySignals.forEach(signal => {
+    signalIndices[signal.key] = signal.idx;
+  });
+  sellSignals.forEach(signal => {
+    signalIndices[signal.key] = signal.idx;
+  });
+  
   if (signals && Array.isArray(signals.activeSignals) && signals.activeSignals.length > 0) {
     signals.activeSignals.forEach(sigKey => {
-      const idx = indices[sigKey];
+      const idx = signalIndices[sigKey];
       const sigObj = signals[sigKey];
       if (idx != null && idx >= 0 && sigObj && sigObj.signal && points[idx]) {
         const [x, y] = points[idx];
@@ -112,6 +181,33 @@ export default function MiniChart({ klines, signals }) {
           strokeWidth={i === 0 || i === 4 ? 2 : 1}
         />
       ))}
+      
+      {/* X-axis time labels */}
+      {klines.filter((_, i) => i % Math.ceil(klines.length / 5) === 0 || i === klines.length - 1).map((k, i) => {
+        const x = pad + (klines.indexOf(k) / (klines.length - 1)) * (w - 2 * pad);
+        return (
+          <g key={`time-${i}`}>
+            <line
+              x1={x}
+              x2={x}
+              y1={h - pad}
+              y2={h - pad + 5}
+              stroke="#23263a"
+              strokeWidth={1}
+            />
+            <text
+              x={x}
+              y={h - pad + 18}
+              fontSize="12"
+              fill="#aaa"
+              textAnchor="middle"
+              alignmentBaseline="middle"
+            >
+              {formatTimeLabel(k[0])}
+            </text>
+          </g>
+        );
+      })}
       {/* Y axis min/max labels */}
       <text x={pad - 8} y={pad + 8} fontSize="14" fill="#eee" textAnchor="end">{max.toFixed(2)}</text>
       <text x={pad - 8} y={h - pad} fontSize="14" fill="#eee" textAnchor="end">{min.toFixed(2)}</text>
@@ -143,181 +239,179 @@ export default function MiniChart({ klines, signals }) {
           </g>
         );
       })}
-      {/* Signal arrows for each active signal */}
-      {signals && Array.isArray(signals.activeSignals) && signals.activeSignals.length > 0 && signals.activeSignals.map(sigKey => {
-        const idx = indices[sigKey];
-        const sigObj = signals[sigKey];
-        if (idx != null && idx >= 0 && sigObj && sigObj.signal && points[idx]) {
-           const [x] = points[idx];
-           // Candle geometry
-           const k = klines[idx];
-           const high = +k[2], low = +k[3];
-           const yHigh = pad + ((max - high) / (max - min || 1)) * (h - 2 * pad);
-           const yLow = pad + ((max - low) / (max - min || 1)) * (h - 2 * pad);
-           if (sigObj.signal === 'Buy') {
-            // Green arrow up, below the candle
-            return (
-              <g key={sigKey + '-buy-group'}>
-                {/* Arrow */}
-                <polygon
-                  points={`
-                    ${x},${yLow + 12}
-                    ${x - 8},${yLow + 24}
-                    ${x + 8},${yLow + 24}
-                  `}
-                  fill="#00e1b4"
-                  stroke="#00e1b4"
-                  strokeWidth="2"
-                  style={{ filter: 'drop-shadow(0 0 4px #00e1b4)' }}
-                />
-                {/* Info box */}
-                <g>
-                  <rect
-                    x={x - 60}
-                    y={yLow + 28}
-                    width={120}
-                    height={34}
-                    rx={10}
-                    fill="#181a20"
-                    stroke="#00e1b4"
-                    strokeWidth={2}
-                    opacity={0.98}
-                  />
-                  <text
-                    x={x - 46}
-                    y={yLow + 50}
-                    fontSize="16"
-                    fill="#eee"
-                    fontWeight="bold"
-                    alignmentBaseline="middle"
-                  >
-                    ${closes[idx]?.toFixed(2)}
-                  </text>
-                  <text
-                    x={x + 28}
-                    y={yLow + 50}
-                    fontSize="14"
-                    fill="#aaa"
-                    fontWeight="400"
-                    alignmentBaseline="middle"
-                  >
-                    {formatSignalTime(sigObj.triggeredAt)}
-                  </text>
-                </g>
-              </g>
-            );
-          } else if (sigObj.signal === 'Sell') {
-            // Red arrow down, above the candle
-            return (
-              <g key={sigKey + '-sell-group'}>
-                {/* Arrow */}
-                <polygon
-                  points={`
-                    ${x},${yHigh - 12}
-                    ${x - 8},${yHigh - 24}
-                    ${x + 8},${yHigh - 24}
-                  `}
-                  fill="#ff3860"
-                  stroke="#ff3860"
-                  strokeWidth="2"
-                  style={{ filter: 'drop-shadow(0 0 4px #ff3860)' }}
-                />
-                {/* Info box */}
-                <g>
-                  <rect
-                    x={x - 60}
-                    y={yHigh - 62}
-                    width={120}
-                    height={34}
-                    rx={10}
-                    fill="#181a20"
-                    stroke="#ff3860"
-                    strokeWidth={2}
-                    opacity={0.98}
-                  />
-                  <text
-                    x={x - 46}
-                    y={yHigh - 40}
-                    fontSize="16"
-                    fill="#eee"
-                    fontWeight="bold"
-                    alignmentBaseline="middle"
-                  >
-                    ${closes[idx]?.toFixed(2)}
-                  </text>
-                  <text
-                    x={x + 28}
-                    y={yHigh - 40}
-                    fontSize="14"
-                    fill="#aaa"
-                    fontWeight="400"
-                    alignmentBaseline="middle"
-                  >
-                    {formatSignalTime(sigObj.triggeredAt)}
-                  </text>
-                </g>
-              </g>
-            );
-          }
-        }
-        return null;
-      })}
-      {/* Volume spike markers */}
-      {volumeSpikes.map(i => {
-        const [x, y] = points[i];
-        const k = klines[i];
+      {/* Buy signal markers */}
+      {buySignals.map((signal, index) => {
+        // Get original coordinates
+        const [originalX] = points[signal.idx];
+        const k = klines[signal.idx];
         const low = +k[3];
         const yLow = pad + ((max - low) / (max - min || 1)) * (h - 2 * pad);
-        const vol = Number(k[5]);
+        
+        // Apply safety boundaries
+        const safeX = getSafeX(originalX);
+        const safeYLow = Math.min(bottomBoundary, yLow);
+        
+        // Calculate info box position
+        // If near right edge, shift box to the left
+        const boxOffsetX = originalX > w - pad - 150 ? -140 : -70;
+        
+        // Enhanced Buy signal with prominent marker and info box
         return (
-          <g key={'volspike-' + i}>
-            {/* Purple diamond */}
-            <rect
-              x={x - 8}
-              y={yLow + 32}
-              width={16}
-              height={16}
-              fill="#b266ff"
-              stroke="#fff"
-              strokeWidth={2}
-              transform={`rotate(45 ${x} ${yLow + 40})`}
-              style={{ filter: 'drop-shadow(0 0 4px #b266ff)' }}
+          <g key={`buy-signal-${index}`}>
+            {/* Triangle marker */}
+            <polygon
+              points={`
+                ${safeX},${safeYLow + 10}
+                ${safeX - 10},${safeYLow + 25}
+                ${safeX + 10},${safeYLow + 25}
+              `}
+              fill="#00e1b4"
+              stroke="#ffffff"
+              strokeWidth="1.5"
+              style={{ filter: 'drop-shadow(0 0 6px rgba(0,225,180,0.7))' }}
             />
-            {/* Info box for volume spike */}
+            {/* Enhanced info box */}
             <g>
               <rect
-                x={x - 60}
-                y={yLow + 52}
-                width={120}
-                height={32}
-                rx={10}
-                fill="#181a20"
-                stroke="#b266ff"
+                x={safeX + boxOffsetX}
+                y={safeYLow + 28}
+                width={140}
+                height={48}
+                rx={12}
+                fill="rgba(0,225,180,0.15)"
+                stroke="#00e1b4"
                 strokeWidth={2}
                 opacity={0.98}
               />
+              {/* Price value */}
               <text
-                x={x - 46}
-                y={yLow + 72}
-                fontSize="15"
-                fill="#eee"
+                x={safeX + boxOffsetX + 70}
+                y={safeYLow + 45}
+                fontSize="17"
+                fill="#ffffff"
                 fontWeight="bold"
+                textAnchor="middle"
                 alignmentBaseline="middle"
+                style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.8))' }}
               >
-                Vol: {vol.toLocaleString()}
+                ${signal.price.toFixed(2)}
               </text>
+              {/* Time indicator - now below price */}
               <text
-                x={x + 28}
-                y={yLow + 72}
-                fontSize="13"
-                fill="#aaa"
-                fontWeight="400"
+                x={safeX + boxOffsetX + 70}
+                y={safeYLow + 65}
+                fontSize="12"
+                fill="#ffffff"
+                fontWeight="500"
+                textAnchor="middle"
                 alignmentBaseline="middle"
+                style={{ filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.5))' }}
               >
-                {formatSignalTime(+k[0])}
+                {formatSignalTime(signal.time)}
               </text>
             </g>
           </g>
+        );
+      })}
+      
+      {/* Sell signal markers */}
+      {sellSignals.map((signal, index) => {
+        // Get original coordinates
+        const [originalX] = points[signal.idx];
+        const k = klines[signal.idx];
+        const high = +k[2];
+        const yHigh = pad + ((max - high) / (max - min || 1)) * (h - 2 * pad);
+        
+        // Apply safety boundaries
+        const safeX = getSafeX(originalX);
+        const safeYHigh = Math.max(topBoundary, yHigh);
+        
+        // Calculate info box position
+        // If near right edge, shift box to the left
+        const boxOffsetX = originalX > w - pad - 150 ? -140 : -70;
+        
+        // Enhanced Sell signal with prominent marker and info box
+        return (
+          <g key={`sell-signal-${index}`}>
+            {/* Triangle marker */}
+            <polygon
+              points={`
+                ${safeX},${safeYHigh - 10}
+                ${safeX - 10},${safeYHigh - 25}
+                ${safeX + 10},${safeYHigh - 25}
+              `}
+              fill="#ff3860"
+              stroke="#ffffff"
+              strokeWidth="1.5"
+              style={{ filter: 'drop-shadow(0 0 6px rgba(255,56,96,0.7))' }}
+            />
+            {/* Enhanced info box */}
+            <g>
+              <rect
+                x={safeX + boxOffsetX}
+                y={safeYHigh - 76}
+                width={140}
+                height={48}
+                rx={12}
+                fill="rgba(255,56,96,0.15)"
+                stroke="#ff3860"
+                strokeWidth={2}
+                opacity={0.98}
+              />
+              {/* Price value */}
+              <text
+                x={safeX + boxOffsetX + 70}
+                y={safeYHigh - 60}
+                fontSize="17"
+                fill="#ffffff"
+                fontWeight="bold"
+                textAnchor="middle"
+                alignmentBaseline="middle"
+                style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.8))' }}
+              >
+                ${signal.price.toFixed(2)}
+              </text>
+              {/* Time indicator - now below price */}
+              <text
+                x={safeX + boxOffsetX + 70}
+                y={safeYHigh - 40}
+                fontSize="12"
+                fill="#ffffff"
+                fontWeight="500"
+                textAnchor="middle"
+                alignmentBaseline="middle"
+                style={{ filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.5))' }}
+              >
+                {formatSignalTime(signal.time)}
+              </text>
+            </g>
+          </g>
+        );
+      })}
+      {/* Volume bars */}
+      {klines.map((k, i) => {
+        const [x] = points[i];
+        const vol = Number(k[5]);
+        
+        // Find max volume for scaling
+        const maxVol = Math.max(...klines.map(k => Number(k[5])));
+        
+        // Calculate bar height based on volume relative to max
+        const volHeight = Math.max(1, (vol / maxVol) * 60);
+        
+        // Check if this is a volume spike
+        const isVolumeSpike = volumeSpikes.includes(i);
+        
+        return (
+          <rect
+            key={'vol-' + i}
+            x={x - barW / 2}
+            y={h - pad - volHeight}
+            width={barW}
+            height={volHeight}
+            fill={isVolumeSpike ? '#4287f5' : '#2a2e39'}
+            opacity={0.8}
+          />
         );
       })}
     </svg>

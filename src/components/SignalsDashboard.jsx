@@ -70,9 +70,95 @@ export default function SignalsDashboard() {
     return date.toLocaleString();
   };
 
-  // Get signal color based on type
-  const getSignalColor = (type) => {
-    return type === 'buy' ? 'green' : 'red';
+  // Get signal color based on type and strength
+  const getSignalColor = (type, strength = 'medium', indicator = '') => {
+    // Special color for cluster signals
+    if (indicator === 'cluster') {
+      return type === 'buy' ? '#00ff00' : '#ff0000'; // bright green/red for clusters
+    }
+    
+    if (type === 'buy') {
+      return strength === 'strong' ? '#00e676' : '#00c853'; // stronger/normal green
+    } else if (type === 'sell') {
+      return strength === 'strong' ? '#ff1744' : '#ff5252'; // stronger/normal red
+    } else {
+      return '#787b86'; // gray for other types
+    }
+  };
+  
+  // Get signal icon based on type and indicator
+  const getSignalIcon = (type, indicator = '') => {
+    // Special icon for cluster signals
+    if (indicator === 'cluster') {
+      return type === 'buy' ? '▲▲▲' : '▼▼▼'; // triple triangles for clusters
+    }
+    
+    if (type === 'buy') {
+      return indicator.includes('+') ? '⇧' : '↑'; // double up arrow for combined signals, single for normal
+    } else if (type === 'sell') {
+      return indicator.includes('+') ? '⇩' : '↓'; // double down arrow for combined signals, single for normal
+    } else {
+      return '•'; // bullet for other types
+    }
+  };
+  
+  // Filter signals to only show buy and sell
+  const filterBuySellSignals = (signals) => {
+    if (!signals) return [];
+    return signals.filter(signal => signal.type === 'buy' || signal.type === 'sell');
+  };
+  
+  // Get combined signals across timeframes
+  const getCombinedSignals = () => {
+    // Group signals by symbol
+    const symbolGroups = {};
+    
+    // Process each timeframe
+    Object.entries(signalsMap).forEach(([timeframe, signals]) => {
+      if (!signals) return;
+      
+      // Only consider buy/sell signals
+      const buySellSignals = filterBuySellSignals(signals);
+      
+      buySellSignals.forEach(signal => {
+        if (!symbolGroups[signal.symbol]) {
+          symbolGroups[signal.symbol] = { buy: 0, sell: 0, timeframes: {}, lastSignal: null };
+        }
+        
+        // Count by type
+        symbolGroups[signal.symbol][signal.type]++;
+        
+        // Track timeframes with this signal type
+        if (!symbolGroups[signal.symbol].timeframes[signal.type]) {
+          symbolGroups[signal.symbol].timeframes[signal.type] = [];
+        }
+        
+        if (!symbolGroups[signal.symbol].timeframes[signal.type].includes(timeframe)) {
+          symbolGroups[signal.symbol].timeframes[signal.type].push(timeframe);
+        }
+        
+        // Track the most recent signal
+        if (!symbolGroups[signal.symbol].lastSignal || 
+            signal.timestamp > symbolGroups[signal.symbol].lastSignal.timestamp) {
+          symbolGroups[signal.symbol].lastSignal = signal;
+        }
+      });
+    });
+    
+    // Convert to array and sort by strength (number of timeframes with same signal)
+    return Object.entries(symbolGroups)
+      .map(([symbol, data]) => ({
+        symbol,
+        buyCount: data.buy,
+        sellCount: data.sell,
+        buyTimeframes: data.timeframes.buy || [],
+        sellTimeframes: data.timeframes.sell || [],
+        lastSignal: data.lastSignal,
+        // Determine overall signal direction
+        signalStrength: Math.max(data.buyTimeframes?.length || 0, data.sellTimeframes?.length || 0),
+        signalType: (data.buyTimeframes?.length || 0) > (data.sellTimeframes?.length || 0) ? 'buy' : 'sell'
+      }))
+      .sort((a, b) => b.signalStrength - a.signalStrength);
   };
 
   // Handle refresh interval change
@@ -97,6 +183,8 @@ export default function SignalsDashboard() {
     if (selectedSymbol === 'all') return signals;
     return signals.filter(signal => signal.symbol === selectedSymbol);
   };
+
+  const combinedSignals = getCombinedSignals();
 
   return (
     <div className="signals-dashboard">
@@ -124,7 +212,7 @@ export default function SignalsDashboard() {
           </label>
           {lastUpdated && (
             <div className="last-updated">
-              Last updated: {lastUpdated.toLocaleString()}
+              Last updated: {formatDate(lastUpdated)}
             </div>
           )}
         </div>
@@ -160,10 +248,52 @@ export default function SignalsDashboard() {
         </div>
       )}
       
+      {/* Combined Signals Section */}
+      <div className="combined-signals-section">
+        <h2>Multi-Timeframe Signals</h2>
+        {combinedSignals.length > 0 ? (
+          <table className="signals-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Signal</th>
+                <th>Strength</th>
+                <th>Timeframes</th>
+                <th>Price</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {combinedSignals.map((signal) => (
+                <tr key={signal.symbol} className={`signal-row ${signal.signalType} ${signal.lastSignal.indicator === 'cluster' ? 'cluster-signal' : ''}`}>
+                  <td>{signal.symbol}</td>
+                  <td style={{ color: getSignalColor(signal.signalType, 'strong') }}>
+                    <span className="signal-icon">{getSignalIcon(signal.signalType, 'combined')}</span>
+                    {signal.signalType.toUpperCase()}
+                  </td>
+                  <td>{signal.signalStrength} timeframes</td>
+                  <td>
+                    {signal.signalType === 'buy' 
+                      ? signal.buyTimeframes.join(', ')
+                      : signal.sellTimeframes.join(', ')}
+                  </td>
+                  <td>${signal.lastSignal.price.toFixed(2)}</td>
+                  <td>{formatDate(signal.lastSignal.timestamp)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="no-signals">No combined signals found</div>
+        )}
+      </div>
+      
       <div className="timeframes-grid">
         {timeframes.map(timeframe => {
           const timeframeSignals = signalsMap[timeframe] || [];
-          const filteredSignals = filterSignalsBySymbol(timeframeSignals);
+          // Filter to only buy/sell signals
+          const buySellSignals = filterBuySellSignals(timeframeSignals);
+          const filteredSignals = filterSignalsBySymbol(buySellSignals);
           
           return (
             <div key={timeframe} className="timeframe-card">
@@ -176,17 +306,29 @@ export default function SignalsDashboard() {
                       <th>Type</th>
                       <th>Price</th>
                       <th>Time</th>
+                      <th>Indicator</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredSignals.map((signal, index) => (
-                      <tr key={index} className={`signal-row ${signal.type}`}>
+                      <tr key={index} className={`signal-row ${signal.type} ${signal.indicator === 'cluster' ? 'cluster-signal' : ''}`}>
                         <td>{signal.symbol}</td>
-                        <td style={{ color: getSignalColor(signal.type) }}>
+                        <td style={{ color: getSignalColor(signal.type, signal.strength) }}>
+                          <span className="signal-icon">{getSignalIcon(signal.type, signal.indicator)}</span>
                           {signal.type.toUpperCase()}
                         </td>
                         <td>${signal.price.toFixed(2)}</td>
                         <td>{formatDate(signal.timestamp)}</td>
+                        <td className="signal-indicator">
+                          {signal.indicator && (
+                            <span 
+                              className={`indicator-badge ${signal.indicator === 'cluster' ? 'cluster' : ''}`} 
+                              title={`Strength: ${signal.strength || 'medium'}`}
+                            >
+                              {signal.indicator}
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
