@@ -10,8 +10,7 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
   const [sortKey, setSortKey] = useState('market_cap_rank');
   const [sortDir, setSortDir] = useState('asc');
   const [signalFilter, setSignalFilter] = useState({ buy: true, sell: true });
-  const [signalSort, setSignalSort] = useState('time'); // 'time', 'pct', or 'signal'
-  
+
   // Load saved active signals from localStorage or use default
   const [activeSignals, setActiveSignals] = useState(() => {
     const savedSignals = localStorage.getItem('cryptoDashboard_activeSignals');
@@ -62,16 +61,7 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
   const rows = data.map((coin) => {
     const klines = klinesMap?.[coin.id] || [];
     const signals = getSignals(klines);
-    const { wavetrend, rsi, ema } = signals;
-    let mainSignal, mainTriggeredAt;
-    if (activeSignals[0] === 'confluence') {
-      mainSignal = wavetrend.signal === rsi.signal && wavetrend.signal ? wavetrend.signal : null;
-      mainTriggeredAt = wavetrend.signal === rsi.signal && wavetrend.signal ? wavetrend.triggeredAt : null;
-    } else {
-      mainSignal = signals[activeSignals[0]]?.signal;
-      mainTriggeredAt = signals[activeSignals[0]]?.triggeredAt;
-    }
-    const ago = mainTriggeredAt ? formatSignalAgo(mainTriggeredAt, now, interval) : '';
+    const { wavetrend, rsi } = signals;
     const funding = fundingMap?.[coin.id]?.lastFundingRate;
     const oiArr = oiMap?.[coin.id] || [];
     const oi = oiArr.length > 0 ? oiArr[oiArr.length - 1]?.sumOpenInterest : null;
@@ -93,9 +83,6 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
       coin,
       klines,
       signals,
-      mainSignal,
-      mainTriggeredAt,
-      ago,
       funding,
       oi,
       volChange,
@@ -108,8 +95,10 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
   let filteredRows = rows;
   if (!signalFilter.buy || !signalFilter.sell) {
     filteredRows = rows.filter(r => {
-      if (signalFilter.buy && r.mainSignal === 'Buy') return true;
-      if (signalFilter.sell && r.mainSignal === 'Sell') return true;
+      // Use the currently active signal for filtering
+      const sig = activeSignals[0];
+      if (signalFilter.buy && r.signals[sig]?.signal === 'Buy') return true;
+      if (signalFilter.sell && r.signals[sig]?.signal === 'Sell') return true;
       return false;
     });
   }
@@ -365,7 +354,7 @@ export default function MarketTable({ data, klinesMap, interval, fundingMap, oiM
         </thead>
         <tbody>
           {sortedRows.map((row, i) => {
-            const { coin, klines, signals, mainSignal, mainTriggeredAt, ago, funding, oi, volChange, hasVolumeSpike, volSpikeValue } = row;
+            const { coin, klines, signals, funding, oi, volChange, hasVolumeSpike, volSpikeValue } = row;
             const isExpanded = expandedId === coin.id;
             return (
               <React.Fragment key={coin.id}>

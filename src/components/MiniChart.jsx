@@ -119,14 +119,14 @@ export default function MiniChart({ klines, signals }) {
       <line x1={pad} x2={w - pad} y1={h - pad} y2={h - pad} stroke="#444" strokeWidth="2" />
       {/* Candlestick bars */}
       {klines.map((k, i) => {
-        const [openTime, open, high, low, close] = [k[0], +k[1], +k[2], +k[3], +k[4]];
-        const x = pad + (i / (klines.length - 1)) * (w - 2 * pad);
-        const yOpen = pad + ((max - open) / (max - min || 1)) * (h - 2 * pad);
-        const yClose = pad + ((max - close) / (max - min || 1)) * (h - 2 * pad);
-        const yHigh = pad + ((max - high) / (max - min || 1)) * (h - 2 * pad);
-        const yLow = pad + ((max - low) / (max - min || 1)) * (h - 2 * pad);
-        const up = close >= open;
-        return (
+         const open = +k[1], high = +k[2], low = +k[3], close = +k[4];
+         const x = pad + (i / (klines.length - 1)) * (w - 2 * pad);
+         const yOpen = pad + ((max - open) / (max - min || 1)) * (h - 2 * pad);
+         const yClose = pad + ((max - close) / (max - min || 1)) * (h - 2 * pad);
+         const yHigh = pad + ((max - high) / (max - min || 1)) * (h - 2 * pad);
+         const yLow = pad + ((max - low) / (max - min || 1)) * (h - 2 * pad);
+         const up = close >= open;
+         return (
           <g key={i}>
             {/* Wick */}
             <line x1={x} x2={x} y1={yHigh} y2={yLow} stroke={up ? '#00e1b4' : '#ff3860'} strokeWidth={2} />
@@ -148,13 +148,13 @@ export default function MiniChart({ klines, signals }) {
         const idx = indices[sigKey];
         const sigObj = signals[sigKey];
         if (idx != null && idx >= 0 && sigObj && sigObj.signal && points[idx]) {
-          const [x, y] = points[idx];
-          // Candle geometry
-          const k = klines[idx];
-          const high = +k[2], low = +k[3];
-          const yHigh = pad + ((max - high) / (max - min || 1)) * (h - 2 * pad);
-          const yLow = pad + ((max - low) / (max - min || 1)) * (h - 2 * pad);
-          if (sigObj.signal === 'Buy') {
+           const [x] = points[idx];
+           // Candle geometry
+           const k = klines[idx];
+           const high = +k[2], low = +k[3];
+           const yHigh = pad + ((max - high) / (max - min || 1)) * (h - 2 * pad);
+           const yLow = pad + ((max - low) / (max - min || 1)) * (h - 2 * pad);
+           if (sigObj.signal === 'Buy') {
             // Green arrow up, below the candle
             return (
               <g key={sigKey + '-buy-group'}>

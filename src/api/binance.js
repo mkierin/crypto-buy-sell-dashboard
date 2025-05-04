@@ -16,43 +16,44 @@ export async function fetchTicker(symbol) {
 
 export async function fetchKlines(symbol, interval = '1m', limit = 100) {
   try {
-    const res = await fetch(`${BASE_URL}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+    const url = `/api/klines/${symbol}?interval=${interval}&limit=${limit}`;
+    const res = await fetch(url);
     if (!res.ok) {
       const errorBody = await res.text();
-      console.error(`Binance Klines Error ${res.status}: ${errorBody} for symbol ${symbol}`);
+      console.error(`Backend Klines Error ${res.status}: ${errorBody} for symbol ${symbol}`);
       throw new Error(`Failed to fetch klines: ${res.status}`);
     }
     return await res.json();
   } catch (err) {
-    console.error('Binance Klines Error:', err.message || err);
+    console.error('Backend Klines Error:', err.message || err);
     return null;
   }
 }
 
 export async function fetchFunding(symbol) {
-  // https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT
   try {
-    const res = await fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`);
+    const url = `/api/funding/${symbol}`;
+    const res = await fetch(url);
     if (!res.ok) {
       const errorBody = await res.text();
-      console.error(`Binance Funding Error ${res.status}: ${errorBody} for symbol ${symbol}`);
+      console.error(`Backend Funding Error ${res.status}: ${errorBody} for symbol ${symbol}`);
       throw new Error(`Failed to fetch funding: ${res.status}`);
     }
     return await res.json();
   } catch (err) {
-    console.error('Binance Funding Error:', err.message || err);
+    console.error('Backend Funding Error:', err.message || err);
     return null;
   }
 }
 
 export async function fetchOpenInterest(symbol) {
-  // https://fapi.binance.com/futures/data/openInterestHist?symbol=BTCUSDT&period=5m&limit=10
   try {
-    const res = await fetch(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=5m&limit=10`);
+    const url = `/api/open-interest/${symbol}`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to fetch open interest');
     return await res.json();
   } catch (err) {
-    console.error('Binance Open Interest Error:', err);
+    console.error('Backend Open Interest Error:', err);
     return null;
   }
 }
