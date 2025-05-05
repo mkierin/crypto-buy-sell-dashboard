@@ -26,24 +26,27 @@ function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
 
   // Signal mode descriptions
   const signalModeDescriptions = {
-    wavetrend: 'Wavetrend: Buy/Sell when Wavetrend oscillator crosses WT2 in extreme zones (-60/+60). Good for reversals.',
+    wavetrend: 'Wavetrend: Buy/Sell when Wavetrend oscillator crosses WT2 in extreme zones (-55/+55). Good for reversals.',
     rsi: 'RSI: Buy/Sell when RSI crosses above 30 or below 70. Classic momentum strategy.',
     ema: 'EMA: Buy/Sell when price crosses above/below EMA21. Trend following.',
+    ma_crossover: 'MA Crossover: Buy/Sell when EMA20 crosses above/below EMA50. Strong trend signal.',
+    breakout: 'Breakout: Buy/Sell when price breaks above resistance or below support levels.',
     confluence: 'Confluence: WT and RSI must agree on signal direction.',
     wt_ema: 'WT+EMA: Wavetrend signal confirmed by EMA trend. Reduces false signals by requiring trend agreement.',
     rsi_ema: 'RSI+EMA: RSI signal confirmed by EMA trend.',
     wt_rsi: 'WT+RSI: Both Wavetrend and RSI agree within 3 candles.',
-    cluster: 'Cluster: At least two of WT, RSI, EMA agree on Buy/Sell.'
+    cluster: 'Cluster: Multiple signals agree on Buy/Sell direction. Stronger confirmation.'
   };
   const signalModes = [
     { value: 'wavetrend', label: 'Wavetrend' },
     { value: 'rsi', label: 'RSI' },
     { value: 'ema', label: 'EMA' },
-    { value: 'confluence', label: 'Confluence (WT+RSI)' },
+    { value: 'ma_crossover', label: 'MA Crossover' },
+    { value: 'breakout', label: 'Breakout' },
     { value: 'wt_ema', label: 'WT + EMA' },
     { value: 'rsi_ema', label: 'RSI + EMA' },
     { value: 'wt_rsi', label: 'WT + RSI' },
-    { value: 'cluster', label: 'Cluster (2 of 3)' }
+    { value: 'cluster', label: 'Cluster' }
   ];
   if (!Array.isArray(data) || data.length === 0) return <div>No data</div>;
   const now = new Date();
@@ -484,6 +487,16 @@ function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
                                 marginLeft: 8,
                               }}>
                                 {formatSignalAgo(signals[sig].triggeredAt, now, interval)}
+                                {sig === 'cluster' && signals[sig].count && (
+                                  <span style={{
+                                    fontSize: 10,
+                                    color: '#ffcc00',
+                                    marginLeft: 4,
+                                    fontWeight: 700,
+                                  }}>
+                                    ({signals[sig].count})
+                                  </span>
+                                )}
                               </span>
                             )}
                           </div>

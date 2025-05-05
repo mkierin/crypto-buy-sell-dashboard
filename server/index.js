@@ -4,6 +4,7 @@ const sqlite3 = require('sqlite3').verbose();
 const fetch = require('node-fetch');
 const path = require('path');
 const wavetrend = require('./signals/wavetrend');
+const signalManager = require('./signals/index');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -57,7 +58,8 @@ db.serialize(() => {
     timestamp INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     indicator TEXT,
-    strength TEXT
+    strength TEXT,
+    meta TEXT
   )`);
   
   // Create indexes for faster lookups
@@ -260,11 +262,11 @@ async function detectSignals(symbol, interval, klines) {
   
   const now = Date.now();
   
-  // Use WaveTrend algorithm to detect signals
-  const wavetrendSignals = wavetrend.detectSignals(klines);
+  // Use comprehensive signal detection system
+  const allSignals = signalManager.detectAllSignals(klines);
   
   // Add symbol and interval to each signal
-  const signals = wavetrendSignals.map(signal => ({
+  const signals = allSignals.map(signal => ({
     ...signal,
     symbol,
     interval
@@ -272,8 +274,17 @@ async function detectSignals(symbol, interval, klines) {
   
   // Save signals to database
   if (signals.length > 0) {
-    const stmt = db.prepare('INSERT INTO signals (symbol, interval, type, price, timestamp, created_at, indicator, strength) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    // First, delete old signals for this symbol and interval to avoid duplicates
+    // Only keep signals from the last 24 hours to avoid deleting historical data
+    const oneDayAgo = now - (24 * 60 * 60 * 1000);
+    db.run('DELETE FROM signals WHERE symbol = ? AND interval = ? AND created_at > ?', 
+      [symbol, interval, oneDayAgo]);
+    
+    const stmt = db.prepare('INSERT INTO signals (symbol, interval, type, price, timestamp, created_at, indicator, strength, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
     signals.forEach(signal => {
+      // Convert meta object to JSON string if it exists
+      const metaJson = signal.meta ? JSON.stringify(signal.meta) : null;
+      
       stmt.run(
         signal.symbol,
         signal.interval,
@@ -282,7 +293,8 @@ async function detectSignals(symbol, interval, klines) {
         signal.timestamp,
         signal.created_at,
         signal.indicator || 'unknown',
-        signal.strength || 'medium'
+        signal.strength || 'medium',
+        metaJson
       );
     });
     stmt.finalize();
@@ -440,7 +452,20 @@ app.get('/api/signals', async (req, res) => {
         console.error('[signals] Error:', err);
         return res.status(500).json({ error: err.message });
       }
-      res.json(rows);
+      
+      // Parse meta JSON field if it exists
+      const processedRows = rows.map(row => {
+        if (row.meta) {
+          try {
+            row.meta = JSON.parse(row.meta);
+          } catch (e) {
+            console.error('[signals] Error parsing meta JSON:', e);
+          }
+        }
+        return row;
+      });
+      
+      res.json(processedRows);
     });
   } catch (e) {
     console.error('[signals] Error:', e);
@@ -462,7 +487,20 @@ app.get('/api/recent-signals', async (req, res) => {
       const signals = await new Promise((resolve, reject) => {
         db.all(query, [interval, parseInt(limit)], (err, rows) => {
           if (err) reject(err);
-          else resolve(rows);
+          else {
+            // Parse meta JSON field if it exists
+            const processedRows = rows.map(row => {
+              if (row.meta) {
+                try {
+                  row.meta = JSON.parse(row.meta);
+                } catch (e) {
+                  console.error('[recent-signals] Error parsing meta JSON:', e);
+                }
+              }
+              return row;
+            });
+            resolve(processedRows);
+          }
         });
       });
       

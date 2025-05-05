@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchRecentSignals, fetchTimeframes, fetchSignals } from '../api/signals';
 import '../styles/signals.css';
+import '../styles/cluster-modal.css';
 
 export default function SignalsDashboard() {
   const [timeframes, setTimeframes] = useState([]);
@@ -11,6 +12,8 @@ export default function SignalsDashboard() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [selectedSymbol, setSelectedSymbol] = useState('all');
   const [signalCounts, setSignalCounts] = useState({ buy: 0, sell: 0 });
+  const [selectedCluster, setSelectedCluster] = useState(null);
+  const [showClusterInfo, setShowClusterInfo] = useState(false);
 
   useEffect(() => {
     // Fetch supported timeframes once
@@ -78,9 +81,13 @@ export default function SignalsDashboard() {
     }
     
     if (type === 'buy') {
-      return strength === 'strong' ? '#00e676' : '#00c853'; // stronger/normal green
+      if (strength === 'strong') return '#00e676'; // strong green
+      if (strength === 'weak') return '#b9f6ca'; // weak green
+      return '#00c853'; // medium green
     } else if (type === 'sell') {
-      return strength === 'strong' ? '#ff1744' : '#ff5252'; // stronger/normal red
+      if (strength === 'strong') return '#ff1744'; // strong red
+      if (strength === 'weak') return '#ff8a80'; // weak red
+      return '#ff5252'; // medium red
     } else {
       return '#787b86'; // gray for other types
     }
@@ -93,6 +100,18 @@ export default function SignalsDashboard() {
       return type === 'buy' ? '▲▲▲' : '▼▼▼'; // triple triangles for clusters
     }
     
+    // Specific icons based on indicator type
+    if (indicator === 'wavetrend-crossover' || indicator === 'wavetrend+rsi') {
+      return type === 'buy' ? '⚡↑' : '⚡↓'; // lightning for wavetrend
+    } else if (indicator === 'golden-cross' || indicator === 'death-cross' || indicator === 'ema-crossover') {
+      return type === 'buy' ? '✖↑' : '✖↓'; // X for crossovers
+    } else if (indicator === 'rsi-oversold' || indicator === 'rsi-overbought' || indicator === 'rsi-divergence') {
+      return type === 'buy' ? '⟲↑' : '⟲↓'; // cycle for RSI
+    } else if (indicator === 'resistance-breakout' || indicator === 'support-breakout') {
+      return type === 'buy' ? '⊥↑' : '⊤↓'; // breakout symbols
+    }
+    
+    // Default icons
     if (type === 'buy') {
       return indicator.includes('+') ? '⇧' : '↑'; // double up arrow for combined signals, single for normal
     } else if (type === 'sell') {
@@ -120,44 +139,67 @@ export default function SignalsDashboard() {
       // Only consider buy/sell signals
       const buySellSignals = filterBuySellSignals(signals);
       
-      buySellSignals.forEach(signal => {
+      // Filter by selected symbol if needed
+      const relevantSignals = filterSignalsBySymbol(buySellSignals);
+      
+      // For each symbol, prioritize cluster signals
+      const symbolMap = {};
+      relevantSignals.forEach(signal => {
+        if (!symbolMap[signal.symbol]) {
+          symbolMap[signal.symbol] = signal;
+        } else if (signal.indicator === 'cluster' && symbolMap[signal.symbol].indicator !== 'cluster') {
+          symbolMap[signal.symbol] = signal;
+        } else if (signal.strength === 'strong' && symbolMap[signal.symbol].strength !== 'strong' && 
+                  symbolMap[signal.symbol].indicator !== 'cluster') {
+          symbolMap[signal.symbol] = signal;
+        }
+      });
+      
+      // Process the prioritized signals
+      Object.values(symbolMap).forEach(signal => {
         if (!symbolGroups[signal.symbol]) {
-          symbolGroups[signal.symbol] = { buy: 0, sell: 0, timeframes: {}, lastSignal: null };
+          symbolGroups[signal.symbol] = {
+            symbol: signal.symbol,
+            buyTimeframes: [],
+            sellTimeframes: [],
+            lastSignal: null,
+            signalType: null,
+            signalStrength: 0
+          };
         }
         
-        // Count by type
-        symbolGroups[signal.symbol][signal.type]++;
+        const group = symbolGroups[signal.symbol];
         
-        // Track timeframes with this signal type
-        if (!symbolGroups[signal.symbol].timeframes[signal.type]) {
-          symbolGroups[signal.symbol].timeframes[signal.type] = [];
+        // Track which timeframes have buy/sell signals
+        if (signal.type === 'buy' && !group.buyTimeframes.includes(timeframe)) {
+          group.buyTimeframes.push(timeframe);
+        } else if (signal.type === 'sell' && !group.sellTimeframes.includes(timeframe)) {
+          group.sellTimeframes.push(timeframe);
         }
         
-        if (!symbolGroups[signal.symbol].timeframes[signal.type].includes(timeframe)) {
-          symbolGroups[signal.symbol].timeframes[signal.type].push(timeframe);
-        }
-        
-        // Track the most recent signal
-        if (!symbolGroups[signal.symbol].lastSignal || 
-            signal.timestamp > symbolGroups[signal.symbol].lastSignal.timestamp) {
-          symbolGroups[signal.symbol].lastSignal = signal;
+        // Update last signal if this one is more recent or is a cluster
+        if (!group.lastSignal || 
+            signal.indicator === 'cluster' && group.lastSignal.indicator !== 'cluster' ||
+            signal.timestamp > group.lastSignal.timestamp) {
+          group.lastSignal = signal;
         }
       });
     });
     
-    // Convert to array and sort by strength (number of timeframes with same signal)
-    return Object.entries(symbolGroups)
-      .map(([symbol, data]) => ({
-        symbol,
-        buyCount: data.buy,
-        sellCount: data.sell,
-        buyTimeframes: data.timeframes.buy || [],
-        sellTimeframes: data.timeframes.sell || [],
-        lastSignal: data.lastSignal,
-        // Determine overall signal direction
-        signalStrength: Math.max(data.buyTimeframes?.length || 0, data.sellTimeframes?.length || 0),
-        signalType: (data.buyTimeframes?.length || 0) > (data.sellTimeframes?.length || 0) ? 'buy' : 'sell'
-      }))
+    // Determine dominant signal type for each symbol
+    Object.values(symbolGroups).forEach(group => {
+      if (group.buyTimeframes.length > group.sellTimeframes.length) {
+        group.signalType = 'buy';
+        group.signalStrength = group.buyTimeframes.length;
+      } else {
+        group.signalType = 'sell';
+        group.signalStrength = group.sellTimeframes.length;
+      }
+    });
+    
+    // Convert to array and sort by signal strength (descending)
+    return Object.values(symbolGroups)
+      .filter(group => group.signalStrength > 1) // Only show if signal appears in multiple timeframes
       .sort((a, b) => b.signalStrength - a.signalStrength);
   };
 
@@ -173,15 +215,55 @@ export default function SignalsDashboard() {
   
   // Get unique symbols from all signals
   const getUniqueSymbols = () => {
-    if (!allSignals || allSignals.length === 0) return [];
+    if (!allSignals || allSignals.length === 0) return ['all'];
     return ['all', ...new Set(allSignals.map(signal => signal.symbol))];
   };
   
   // Filter signals by selected symbol
   const filterSignalsBySymbol = (signals) => {
-    if (!signals) return [];
-    if (selectedSymbol === 'all') return signals;
+    if (!signals || selectedSymbol === 'all') return signals;
     return signals.filter(signal => signal.symbol === selectedSymbol);
+  };
+  
+  // Consolidate signals to show only one per symbol
+  const consolidateSignals = (signals) => {
+    if (!signals || signals.length === 0) return [];
+    
+    // Group signals by symbol
+    const symbolGroups = {};
+    
+    signals.forEach(signal => {
+      if (!symbolGroups[signal.symbol]) {
+        symbolGroups[signal.symbol] = [];
+      }
+      symbolGroups[signal.symbol].push(signal);
+    });
+    
+    // For each symbol, prioritize cluster signals, then strong signals, then most recent
+    return Object.values(symbolGroups).map(group => {
+      // First look for cluster signals
+      const clusterSignal = group.find(s => s.indicator === 'cluster');
+      if (clusterSignal) return clusterSignal;
+      
+      // Then look for strong signals
+      const strongSignal = group.find(s => s.strength === 'strong');
+      if (strongSignal) return strongSignal;
+      
+      // Otherwise return the most recent signal
+      return group.sort((a, b) => b.timestamp - a.timestamp)[0];
+    });
+  };
+  
+  // Handle cluster click to show details
+  const handleClusterClick = (signal) => {
+    setSelectedCluster(signal);
+    setShowClusterInfo(true);
+  };
+  
+  // Close cluster info modal
+  const closeClusterInfo = () => {
+    setShowClusterInfo(false);
+    setSelectedCluster(null);
   };
 
   const combinedSignals = getCombinedSignals();
@@ -293,7 +375,9 @@ export default function SignalsDashboard() {
           const timeframeSignals = signalsMap[timeframe] || [];
           // Filter to only buy/sell signals
           const buySellSignals = filterBuySellSignals(timeframeSignals);
-          const filteredSignals = filterSignalsBySymbol(buySellSignals);
+          const filteredBySymbol = filterSignalsBySymbol(buySellSignals);
+          // Consolidate to show only one signal per symbol
+          const filteredSignals = consolidateSignals(filteredBySymbol);
           
           return (
             <div key={timeframe} className="timeframe-card">
@@ -306,7 +390,7 @@ export default function SignalsDashboard() {
                       <th>Type</th>
                       <th>Price</th>
                       <th>Time</th>
-                      <th>Indicator</th>
+                      <th>Signal</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -323,9 +407,17 @@ export default function SignalsDashboard() {
                           {signal.indicator && (
                             <span 
                               className={`indicator-badge ${signal.indicator === 'cluster' ? 'cluster' : ''}`} 
-                              title={`Strength: ${signal.strength || 'medium'}`}
+                              title={`${signal.indicator.toUpperCase()} | Strength: ${signal.strength || 'medium'}${signal.meta ? ` | Details: ${JSON.stringify(signal.meta)}` : ''}`}
+                              onClick={signal.indicator === 'cluster' ? () => handleClusterClick(signal) : undefined}
                             >
-                              {signal.indicator}
+                              {signal.indicator === 'cluster' ? 'CLUSTER' : 
+                               signal.indicator.length > 10 ? signal.indicator.substring(0, 8) + '...' : signal.indicator}
+                              {signal.meta && signal.meta.count && (
+                                <span className="meta-count"> ({signal.meta.count})</span>
+                              )}
+                              {signal.indicator === 'cluster' && (
+                                <span className="info-icon"> ℹ️</span>
+                              )}
                             </span>
                           )}
                         </td>
@@ -344,6 +436,60 @@ export default function SignalsDashboard() {
           );
         })}
       </div>
+      
+      {/* Cluster Info Modal */}
+      {showClusterInfo && selectedCluster && (
+        <div className="cluster-info-modal">
+          <div className="cluster-info-content">
+            <div className="cluster-info-header">
+              <h3>{selectedCluster.symbol} Cluster Details</h3>
+              <button className="close-button" onClick={closeClusterInfo}>×</button>
+            </div>
+            <div className="cluster-info-body">
+              <div className="cluster-info-row">
+                <span className="info-label">Type:</span>
+                <span className="info-value" style={{ color: getSignalColor(selectedCluster.type, 'strong') }}>
+                  {selectedCluster.type.toUpperCase()}
+                </span>
+              </div>
+              <div className="cluster-info-row">
+                <span className="info-label">Strength:</span>
+                <span className="info-value">{selectedCluster.strength}</span>
+              </div>
+              <div className="cluster-info-row">
+                <span className="info-label">Price:</span>
+                <span className="info-value">${selectedCluster.price.toFixed(2)}</span>
+              </div>
+              <div className="cluster-info-row">
+                <span className="info-label">Time:</span>
+                <span className="info-value">{formatDate(selectedCluster.timestamp)}</span>
+              </div>
+              {selectedCluster.meta && (
+                <>
+                  <div className="cluster-info-row">
+                    <span className="info-label">Signal Count:</span>
+                    <span className="info-value">{selectedCluster.meta.count}</span>
+                  </div>
+                  {selectedCluster.meta.indicators && (
+                    <div className="cluster-info-row">
+                      <span className="info-label">Indicators:</span>
+                      <div className="indicators-list">
+                        {selectedCluster.meta.indicators.map((indicator, i) => (
+                          <span key={i} className="cluster-indicator-item">{indicator}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+              <div className="cluster-info-description">
+                <p>This cluster represents multiple {selectedCluster.type} signals occurring close together, 
+                indicating a {selectedCluster.type === 'buy' ? 'strong bullish' : 'strong bearish'} momentum.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

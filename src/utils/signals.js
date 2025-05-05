@@ -1,5 +1,6 @@
 // signals.js
-// Implements Wavetrend, RSI, and EMA signal logic for dashboard
+// Implements comprehensive signal detection logic for dashboard
+// Includes WaveTrend, RSI, Moving Averages, and Breakout signals
 // Returns signal info for each method, for each kline array
 
 // --- EMA ---
@@ -80,6 +81,8 @@ export function getSignals(klines) {
     wavetrend: { signal: null, triggeredAt: null, pctChange: null },
     rsi: { signal: null, triggeredAt: null, pctChange: null },
     ema: { signal: null, triggeredAt: null, pctChange: null },
+    ma_crossover: { signal: null, triggeredAt: null, pctChange: null },
+    breakout: { signal: null, triggeredAt: null, pctChange: null },
     wt_ema: { signal: null, triggeredAt: null, pctChange: null },
     rsi_ema: { signal: null, triggeredAt: null, pctChange: null },
     wt_rsi: { signal: null, triggeredAt: null, pctChange: null },
@@ -92,10 +95,11 @@ export function getSignals(klines) {
   const { wt1, wt2 } = wavetrend(closes, highs, lows);
   let wtSignal = null, wtIdx = null;
   for (let i = wt1.length - 1; i > 0; --i) {
-    if (wt1[i - 1] < wt2[i - 1] && wt1[i] > wt2[i] && wt2[i] <= -60) {
+    // Enhanced sensitivity for WaveTrend signals
+    if (wt1[i - 1] < wt2[i - 1] && wt1[i] > wt2[i] && wt2[i] <= -55) {
       wtSignal = 'Buy'; wtIdx = i; break;
     }
-    if (wt1[i - 1] > wt2[i - 1] && wt1[i] < wt2[i] && wt2[i] >= 60) {
+    if (wt1[i - 1] > wt2[i - 1] && wt1[i] < wt2[i] && wt2[i] >= 55) {
       wtSignal = 'Sell'; wtIdx = i; break;
     }
   }
@@ -124,6 +128,40 @@ export function getSignals(klines) {
   let emaPct = (emaIdx !== null && emaIdx < closes.length)
     ? ((closes[closes.length - 1] - closes[emaIdx]) / closes[emaIdx]) * 100 * (emaSignal === 'Buy' ? 1 : -1)
     : null;
+    
+  // --- MA Crossover: Buy if EMA20 crosses above EMA50, Sell if crosses below ---
+  const ema20 = ema(closes, 20);
+  const ema50 = ema(closes, 50);
+  let maCrossSignal = null, maCrossIdx = null;
+  for (let i = closes.length - 1; i > 0; --i) {
+    if (ema20[i - 1] <= ema50[i - 1] && ema20[i] > ema50[i]) { maCrossSignal = 'Buy'; maCrossIdx = i; break; }
+    if (ema20[i - 1] >= ema50[i - 1] && ema20[i] < ema50[i]) { maCrossSignal = 'Sell'; maCrossIdx = i; break; }
+  }
+  let maCrossPct = (maCrossIdx !== null && maCrossIdx < closes.length)
+    ? ((closes[closes.length - 1] - closes[maCrossIdx]) / closes[maCrossIdx]) * 100 * (maCrossSignal === 'Buy' ? 1 : -1)
+    : null;
+    
+  // --- Breakout Detection: Simple support/resistance levels ---
+  let breakoutSignal = null, breakoutIdx = null;
+  // Look for price breaking above/below recent high/low
+  if (closes.length >= 20) {
+    const recentHigh = Math.max(...closes.slice(-20, -1));
+    const recentLow = Math.min(...closes.slice(-20, -1));
+    
+    for (let i = closes.length - 1; i > closes.length - 5; --i) {
+      // Breakout above resistance
+      if (closes[i] > recentHigh * 1.02 && closes[i-1] <= recentHigh) {
+        breakoutSignal = 'Buy'; breakoutIdx = i; break;
+      }
+      // Breakdown below support
+      if (closes[i] < recentLow * 0.98 && closes[i-1] >= recentLow) {
+        breakoutSignal = 'Sell'; breakoutIdx = i; break;
+      }
+    }
+  }
+  let breakoutPct = (breakoutIdx !== null && breakoutIdx < closes.length)
+    ? ((closes[closes.length - 1] - closes[breakoutIdx]) / closes[breakoutIdx]) * 100 * (breakoutSignal === 'Buy' ? 1 : -1)
+    : null;
 
   // --- Compose signals with indices for combos ---
   const signals = {
@@ -144,6 +182,18 @@ export function getSignals(klines) {
       triggeredAt: emaIdx !== null ? new Date(+klines[emaIdx][0]) : null,
       pctChange: emaPct,
       idx: emaIdx
+    },
+    ma_crossover: {
+      signal: maCrossSignal,
+      triggeredAt: maCrossIdx !== null ? new Date(+klines[maCrossIdx][0]) : null,
+      pctChange: maCrossPct,
+      idx: maCrossIdx
+    },
+    breakout: {
+      signal: breakoutSignal,
+      triggeredAt: breakoutIdx !== null ? new Date(+klines[breakoutIdx][0]) : null,
+      pctChange: breakoutPct,
+      idx: breakoutIdx
     }
   };
 
@@ -181,9 +231,9 @@ export function getSignals(klines) {
       pctChange: ((closes[closes.length - 1] - price) / price) * 100 * (agree.signal === 'Buy' ? 1 : -1)
     };
   }
-  // 4. Cluster: at least 2 of 3 agree
+  // 4. Cluster: at least 2 of 5 agree (enhanced to include all signal types)
   let cluster = { signal: null, triggeredAt: null, pctChange: null };
-  const sigs = [signals.wavetrend, signals.rsi, signals.ema];
+  const sigs = [signals.wavetrend, signals.rsi, signals.ema, signals.ma_crossover, signals.breakout];
   const lastSignals = sigs.filter(s => s.signal && s.idx != null);
   if (lastSignals.length >= 2) {
     const buys = lastSignals.filter(s => s.signal === 'Buy');
@@ -191,18 +241,38 @@ export function getSignals(klines) {
     if (buys.length >= 2) {
       const idx = Math.max(...buys.map(s => s.idx));
       const price = closes[idx];
+      // Get the indicators that contributed to this cluster
+      const indicators = buys.map(s => {
+        for (const [key, val] of Object.entries(signals)) {
+          if (val === s) return key;
+        }
+        return null;
+      }).filter(Boolean);
+      
       cluster = {
         signal: 'Buy',
         triggeredAt: idx !== null ? new Date(+klines[idx][0]) : null,
-        pctChange: ((closes[closes.length - 1] - price) / price) * 100
+        pctChange: ((closes[closes.length - 1] - price) / price) * 100,
+        indicators: indicators,
+        count: buys.length
       };
     } else if (sells.length >= 2) {
       const idx = Math.max(...sells.map(s => s.idx));
       const price = closes[idx];
+      // Get the indicators that contributed to this cluster
+      const indicators = sells.map(s => {
+        for (const [key, val] of Object.entries(signals)) {
+          if (val === s) return key;
+        }
+        return null;
+      }).filter(Boolean);
+      
       cluster = {
         signal: 'Sell',
         triggeredAt: idx !== null ? new Date(+klines[idx][0]) : null,
-        pctChange: ((closes[closes.length - 1] - price) / price) * 100 * -1
+        pctChange: ((closes[closes.length - 1] - price) / price) * 100 * -1,
+        indicators: indicators,
+        count: sells.length
       };
     }
   }
