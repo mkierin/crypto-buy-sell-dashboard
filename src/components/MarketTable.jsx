@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { formatSignalAgo } from '../utils/wavetrend';
 import { formatUSD, formatPct, formatNumber } from '../utils/format';
 import { getSignals } from '../utils/signals';
+import { getTimeframeWeight, calculateSignalScore } from '../utils/timeframe-weights';
 import MiniChart from './MiniChart.jsx';
 
 function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
@@ -35,7 +36,7 @@ function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
     wt_ema: 'WT+EMA: Wavetrend signal confirmed by EMA trend. Reduces false signals by requiring trend agreement.',
     rsi_ema: 'RSI+EMA: RSI signal confirmed by EMA trend.',
     wt_rsi: 'WT+RSI: Both Wavetrend and RSI agree within 3 candles.',
-    cluster: 'Cluster: Multiple signals agree on Buy/Sell direction. Stronger confirmation.'
+    cluster: 'Cluster: Multiple signals agree on Buy/Sell direction. Stronger confirmation. Higher timeframes have more weight.'
   };
   const signalModes = [
     { value: 'wavetrend', label: 'Wavetrend' },
@@ -60,11 +61,86 @@ function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
     return ((curr - prev) / prev) * 100;
   }
 
+  // Helper function to get signal color based on type, strength, and timeframe
+  const getSignalColor = (type, strength = 'medium', indicator = '', timeframe = '') => {
+    // Special color for cluster signals
+    if (indicator === 'cluster') {
+      return type === 'Buy' ? '#00ff00' : '#ff0000'; // bright green/red for clusters
+    }
+    
+    // Get timeframe weight to adjust color intensity
+    const tfWeight = getTimeframeWeight(timeframe);
+    const isHigherTimeframe = tfWeight >= 8; // 4h or higher
+    
+    if (type === 'Buy') {
+      if (strength === 'strong') {
+        return isHigherTimeframe ? '#00ff7f' : '#00e676'; // stronger green for higher timeframes
+      }
+      if (strength === 'weak') return '#b9f6ca'; // weak green
+      return isHigherTimeframe ? '#00d75f' : '#00c853'; // medium green
+    } else if (type === 'Sell') {
+      if (strength === 'strong') {
+        return isHigherTimeframe ? '#ff0044' : '#ff1744'; // stronger red for higher timeframes
+      }
+      if (strength === 'weak') return '#ff8a80'; // weak red
+      return isHigherTimeframe ? '#ff2d57' : '#ff5252'; // medium red
+    } else {
+      return '#787b86'; // gray for other types
+    }
+  };
+  
+  // Helper function to prioritize signals based on timeframe
+  const prioritizeSignals = (signalObj, currentInterval) => {
+    if (!signalObj) return signalObj;
+    
+    // Add interval information to each signal
+    Object.keys(signalObj).forEach(key => {
+      if (signalObj[key] && signalObj[key].signal) {
+        signalObj[key].interval = currentInterval;
+        signalObj[key].score = calculateSignalScore({
+          interval: currentInterval,
+          strength: signalObj[key].strength || 'medium',
+          indicator: key
+        });
+      }
+    });
+    
+    return signalObj;
+  };
+
+  // Helper function to get the most relevant signal based on timeframe weighting
+  const getRelevantSignal = (signals, activeSignals) => {
+    if (!signals || !activeSignals || activeSignals.length === 0) return null;
+    
+    // Filter to only active signal types
+    const relevantSignals = activeSignals
+      .filter(sig => signals[sig]?.signal)
+      .map(sig => ({ 
+        ...signals[sig], 
+        indicator: sig,
+        // Add score based on timeframe weight, signal strength, and indicator type
+        score: calculateSignalScore({
+          interval: interval,
+          strength: signals[sig].strength || 'medium',
+          indicator: sig
+        })
+      }));
+    
+    if (relevantSignals.length === 0) return null;
+    
+    // Sort by score (highest first)
+    relevantSignals.sort((a, b) => b.score - a.score);
+    
+    // Return the highest scored signal
+    return relevantSignals[0];
+  };
+
   // Compose table rows with all derived fields for sorting/filtering
   const rows = data.map((coin) => {
     const klines = klinesMap?.[coin.id] || [];
-    const signals = getSignals(klines);
-    // const { wavetrend, rsi } = signals; // Uncomment if needed later
+    const rawSignals = getSignals(klines);
+    // Add timeframe weighting to signals
+    const signals = prioritizeSignals(rawSignals, interval);
     const funding = fundingMap?.[coin.id]?.lastFundingRate;
     const oiArr = oiMap?.[coin.id] || [];
     const oi = oiArr.length > 0 ? oiArr[oiArr.length - 1]?.sumOpenInterest : null;
@@ -359,6 +435,7 @@ function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
           {sortedRows.map((row, i) => {
             const { coin, klines, signals, funding, oi, volChange, hasVolumeSpike, volSpikeValue } = row;
             const isExpanded = expandedId === coin.id;
+            const activeSignal = getRelevantSignal(signals, activeSignals);
             return (
               <React.Fragment key={coin.id}>
                 <tr
@@ -433,10 +510,10 @@ function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
                           borderLeft: `4px solid ${signals[sig].signal === 'Buy' ? '#00e1b4' : '#ff3860'}`,
                           display: 'flex',
                           flexDirection: 'column',
-                          justifyContent: 'center',
                           padding: '6px 10px',
                           position: 'relative',
-                          overflow: 'visible',
+                          overflow: 'hidden',
+                          gap: 8,
                         }}>
                           {/* Subtle gradient overlay */}
                           <div style={{
@@ -447,24 +524,45 @@ function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
                             width: '30%',
                             background: `linear-gradient(90deg, ${signals[sig].signal === 'Buy' ? 'rgba(0,225,180,0.12)' : 'rgba(255,56,96,0.12)'} 0%, transparent 100%)`,
                             pointerEvents: 'none',
+                            zIndex: 0,
                           }} />
-                          
-                          {/* Signal type (Buy/Sell) */}
+                          {/* Signal type (Buy/Sell) left-aligned */}
                           <div style={{ 
-                            fontSize: 13, 
+                            fontSize: 14, 
                             fontWeight: 700, 
                             color: signals[sig].signal === 'Buy' ? '#00e1b4' : '#ff3860',
-                            marginBottom: 3,
                             whiteSpace: 'nowrap',
+                            zIndex: 1,
+                            minWidth: 38,
+                            textAlign: 'left',
                           }}>
                             {signals[sig].signal}
+                            {getTimeframeWeight(interval) >= 8 && (
+                              <span style={{
+                                marginLeft: 4,
+                                backgroundColor: '#7b1fa2',
+                                color: 'white',
+                                borderRadius: '50%',
+                                width: 12,
+                                height: 12,
+                                fontSize: 8,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: '1px solid white'
+                              }}>H</span>
+                            )}
                           </div>
-                          {/* Percentage and time on same line */}
+                          {/* % and time stacked to right of label */}
                           <div style={{
                             display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            width: '100%',
+                            flexDirection: 'column',
+                            alignItems: 'flex-start',
+                            justifyContent: 'center',
+                            zIndex: 1,
+                            minWidth: 54,
+                            maxWidth: 70,
+                            overflow: 'hidden',
                           }}>
                             {signals[sig].pctChange !== null && (
                               <span style={{
@@ -487,16 +585,6 @@ function MarketTable({ data, klinesMap, interval, fundingMap, oiMap }) {
                                 marginLeft: 8,
                               }}>
                                 {formatSignalAgo(signals[sig].triggeredAt, now, interval)}
-                                {sig === 'cluster' && signals[sig].count && (
-                                  <span style={{
-                                    fontSize: 10,
-                                    color: '#ffcc00',
-                                    marginLeft: 4,
-                                    fontWeight: 700,
-                                  }}>
-                                    ({signals[sig].count})
-                                  </span>
-                                )}
                               </span>
                             )}
                           </div>
