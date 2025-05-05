@@ -22,21 +22,38 @@ export default function App() {
     let cancelled = false;
     
     async function fetchMarketDataOnly() {
-      // Only set loading on initial load, not on refreshes
-      if (!cgData) setLoading(true);
-      
-      // Fetch CoinGecko market data for top 20 coins
-      const cg = await fetchMarketData();
-      if (!cancelled) setCgData(cg);
-      
-      if (!cancelled && cgData) {
-        // Only remove loading state if we already have klines data
-        setLoading(false);
-      }
-      
-      // Schedule next refresh
-      if (!cancelled) {
-        timeout = setTimeout(fetchMarketDataOnly, 5 * 60 * 1000); // Refresh market data every 5 minutes
+      try {
+        console.log('Fetching market data...');
+        // Only set loading on initial load, not on refreshes
+        if (!cgData) setLoading(true);
+        
+        // Fetch CoinGecko market data for top 20 coins
+        const cg = await fetchMarketData();
+        
+        if (!cancelled) {
+          console.log(`Received market data for ${cg ? cg.length : 0} coins`);
+          if (!cg || !Array.isArray(cg) || cg.length === 0) {
+            console.error('Market data is empty or invalid:', cg);
+          } else {
+            // Log the first coin to check structure
+            console.log('Sample coin data:', cg[0]);
+          }
+          
+          setCgData(cg);
+          
+          // Only remove loading state if we already have klines data
+          if (Object.keys(klinesMap).length > 0) {
+            setLoading(false);
+          }
+        }
+        
+        // Schedule next refresh
+        if (!cancelled) {
+          timeout = setTimeout(fetchMarketDataOnly, 5 * 60 * 1000); // Refresh market data every 5 minutes
+        }
+      } catch (error) {
+        console.error('Error fetching market data:', error);
+        if (!cancelled) setLoading(false);
       }
     }
     
@@ -126,18 +143,22 @@ export default function App() {
       cancelled = true;
       if (timeout) clearTimeout(timeout);
     };
-  }, [cgData]); // Only depend on cgData, not interval
+  }, [cgData, interval]); // Depend on both cgData and interval
 
   // Function to handle timeframe change
   const handleIntervalChange = (newInterval) => {
-    // Set the new interval without triggering a full reload
+    // Set the new interval and indicate loading state
     setTimeframeLoading(true);
+    setInterval(newInterval); // Update interval immediately to reflect in UI
     
     // Fetch only the timeframe-specific data in the background
     const fetchNewTimeframeData = async () => {
       try {
+        console.log(`Fetching data for new timeframe: ${newInterval}`);
         // Create new objects to store updated data
         const newKlinesMap = {};
+        const newFundingMap = {};
+        const newOiMap = {};
         
         if (cgData && Array.isArray(cgData)) {
           // Process in batches to avoid rate limits
@@ -150,9 +171,22 @@ export default function App() {
               batch.map(async coin => {
                 const symbol = (coin.symbol + 'usdt').toUpperCase();
                 try {
-                  // Only fetch klines data for the new interval
+                  // Fetch klines data for the new interval
                   const klines = await fetchKlines(symbol, newInterval, 50);
-                  newKlinesMap[coin.id] = klines;
+                  if (klines) {
+                    newKlinesMap[coin.id] = klines;
+                  }
+                  
+                  // Also update funding and OI data
+                  const funding = await fetchFunding(symbol);
+                  if (funding) {
+                    newFundingMap[coin.id] = funding;
+                  }
+                  
+                  const oi = await fetchOpenInterest(symbol);
+                  if (oi) {
+                    newOiMap[coin.id] = oi;
+                  }
                 } catch (error) {
                   console.error(`Error fetching data for ${symbol}:`, error);
                 }
@@ -167,8 +201,10 @@ export default function App() {
         }
         
         // Update the state with new data
+        console.log(`Received klines data for ${Object.keys(newKlinesMap).length} coins`);
         setKlinesMap(newKlinesMap);
-        setInterval(newInterval); // Update interval after data is ready
+        setFundingMap(newFundingMap);
+        setOiMap(newOiMap);
         setTimeframeLoading(false);
       } catch (error) {
         console.error('Error updating timeframe data:', error);
